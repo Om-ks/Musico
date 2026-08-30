@@ -116,7 +116,7 @@ class MusicoAudioHandler extends BaseAudioHandler {
     playbackState.add(
       PlaybackState(
         controls: controls,
-        androidCompactActionIndices: const [0, 1, 2, 3],
+        androidCompactActionIndices: const [1, 2, 3],
         systemActions: const {
           MediaAction.seek,
           MediaAction.skipToPrevious,

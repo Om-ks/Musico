@@ -190,34 +190,41 @@ class YoutubeAccountService {
                 final playlistEndpoint = twoRow['navigationEndpoint']?['watchPlaylistEndpoint'];
                 final browseEndpoint = twoRow['navigationEndpoint']?['browseEndpoint'];
                 
-
-                
-                final id = playlistEndpoint?['playlistId']?.toString() ??
+                final playlistId = playlistEndpoint?['playlistId']?.toString() ??
                            watchEndpoint?['playlistId']?.toString() ??
-                           browseEndpoint?['browseId']?.toString() ??
-                           watchEndpoint?['videoId']?.toString();
+                           browseEndpoint?['browseId']?.toString();
+                final videoId = watchEndpoint?['videoId']?.toString();
                            
-                if (id == null || id.isEmpty) continue;
+                if (playlistId == null && videoId == null) continue;
                 
                 final titleText = twoRow['title']?['runs']?[0]?['text']?.toString() ?? 'Unknown';
-                final subtitleText = (twoRow['subtitle']?['runs'] as List?)?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+                // Only take the first run for subtitle to avoid view counts
+                final subtitleText = (twoRow['subtitle']?['runs'] as List?)?.firstWhere((r) => r['text'] != null, orElse: () => {})['text']?.toString() ?? '';
                 
                 final thumbnails = twoRow['thumbnailRenderer']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
                 final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
                 
-                // In YouTube Music, twoRowItemRenderer is essentially always a card (album/playlist/artist/mix).
-                // We map all of these to MusicPlaylist so they render properly as square horizontal cards.
-                String finalId = id;
-                if (finalId.startsWith('VL')) finalId = finalId.substring(2);
-                
-                playlists.add(MusicPlaylist(
-                  id: finalId,
-                  title: titleText,
-                  owner: subtitleText,
-                  thumbnailUrl: thumb,
-                  itemCount: 0,
-                  source: 'youtube'
-                ));
+                if (playlistId != null && playlistId.isNotEmpty) {
+                  String finalId = playlistId.startsWith('VL') ? playlistId.substring(2) : playlistId;
+                  playlists.add(MusicPlaylist(
+                    id: finalId,
+                    title: titleText,
+                    owner: subtitleText,
+                    thumbnailUrl: thumb,
+                    itemCount: 0,
+                    source: 'youtube'
+                  ));
+                } else if (videoId != null && videoId.isNotEmpty) {
+                  songs.add(Song(
+                    id: videoId,
+                    title: titleText,
+                    artist: subtitleText,
+                    album: 'YouTube Music',
+                    thumbnailUrl: thumb,
+                    duration: 0,
+                    source: 'youtube'
+                  ));
+                }
               } else if (responsive != null) {
                 final flexColumns = responsive['flexColumns'] as List?;
                 if (flexColumns == null || flexColumns.isEmpty) continue;
@@ -228,7 +235,7 @@ class YoutubeAccountService {
                 final subtitleRuns = (flexColumns.length > 1) 
                     ? (flexColumns[1]?['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs'] as List?)
                     : null;
-                final subtitleText = subtitleRuns?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+                final subtitleText = subtitleRuns?.firstWhere((r) => r['text'] != null, orElse: () => {})['text']?.toString() ?? '';
                 
                 final thumbnails = responsive['thumbnail']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
                 final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
@@ -299,27 +306,52 @@ class YoutubeAccountService {
                   final responsive = item['musicResponsiveListItemRenderer'];
                   
                   if (twoRow != null) {
-                    final id = twoRow['navigationEndpoint']?['watchPlaylistEndpoint']?['playlistId']?.toString() ??
-                               twoRow['navigationEndpoint']?['watchEndpoint']?['playlistId']?.toString() ??
-                               twoRow['navigationEndpoint']?['browseEndpoint']?['browseId']?.toString() ??
-                               twoRow['navigationEndpoint']?['watchEndpoint']?['videoId']?.toString();
-                    if (id == null || id.isEmpty) continue;
+                    final watchEndpoint = twoRow['navigationEndpoint']?['watchEndpoint'];
+                    final playlistEndpoint = twoRow['navigationEndpoint']?['watchPlaylistEndpoint'];
+                    final browseEndpoint = twoRow['navigationEndpoint']?['browseEndpoint'];
+                    
+                    final playlistId = playlistEndpoint?['playlistId']?.toString() ??
+                               watchEndpoint?['playlistId']?.toString() ??
+                               browseEndpoint?['browseId']?.toString();
+                    final videoId = watchEndpoint?['videoId']?.toString();
+                               
+                    if (playlistId == null && videoId == null) continue;
                     
                     final titleText = twoRow['title']?['runs']?[0]?['text']?.toString() ?? 'Unknown';
-                    final subtitleText = (twoRow['subtitle']?['runs'] as List?)?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+                    // Only take the first run for subtitle to avoid view counts
+                    final subtitleText = (twoRow['subtitle']?['runs'] as List?)?.firstWhere((r) => r['text'] != null, orElse: () => {})['text']?.toString() ?? '';
                     
                     final thumbnails = twoRow['thumbnailRenderer']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
                     final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
                     
-                    String finalId = id.startsWith('VL') ? id.substring(2) : id;
-                    playlists.add(MusicPlaylist(id: finalId, title: titleText, owner: subtitleText, thumbnailUrl: thumb, itemCount: 0, source: 'youtube'));
+                    if (playlistId != null && playlistId.isNotEmpty) {
+                      String finalId = playlistId.startsWith('VL') ? playlistId.substring(2) : playlistId;
+                      playlists.add(MusicPlaylist(
+                        id: finalId,
+                        title: titleText,
+                        owner: subtitleText,
+                        thumbnailUrl: thumb,
+                        itemCount: 0,
+                        source: 'youtube'
+                      ));
+                    } else if (videoId != null && videoId.isNotEmpty) {
+                      songs.add(Song(
+                        id: videoId,
+                        title: titleText,
+                        artist: subtitleText,
+                        album: 'YouTube Music',
+                        thumbnailUrl: thumb,
+                        duration: 0,
+                        source: 'youtube'
+                      ));
+                    }
                   } else if (responsive != null) {
                     final flexColumns = responsive['flexColumns'] as List?;
                     if (flexColumns == null || flexColumns.isEmpty) continue;
                     
                     final titleText = flexColumns[0]?['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs']?[0]?['text']?.toString() ?? 'Unknown';
                     final subtitleText = (flexColumns.length > 1) 
-                        ? ((flexColumns[1]?['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs'] as List?)?.map((r) => r['text']?.toString() ?? '').join('') ?? '')
+                        ? ((flexColumns[1]?['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs'] as List?)?.firstWhere((r) => r['text'] != null, orElse: () => {})['text']?.toString() ?? '')
                         : '';
                     
                     final thumbnails = responsive['thumbnail']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
@@ -470,31 +502,41 @@ class YoutubeAccountService {
 
 
   String? _extractContinuationToken(dynamic data) {
-    try {
-      final directLists = [
-        data['continuationContents']?['musicPlaylistShelfContinuation']?['continuations'],
-        data['continuationContents']?['musicShelfContinuation']?['continuations'],
-        data['continuationContents']?['sectionListContinuation']?['continuations'],
-        data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['sectionListRenderer']?['continuations'],
-        data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['musicPlaylistShelfRenderer']?['continuations'],
-        data['contents']?['sectionListRenderer']?['continuations'],
-        data['contents']?['musicPlaylistShelfRenderer']?['continuations'],
-        data['contents']?['twoColumnBrowseResultsRenderer']?['secondaryContents']?['sectionListRenderer']?['contents']?[0]?['musicPlaylistShelfRenderer']?['continuations'],
-        data['contents']?['twoColumnBrowseResultsRenderer']?['secondaryContents']?['sectionListRenderer']?['continuations'],
-      ];
-
-      for (final list in directLists) {
-        if (list is! List) continue;
-        for (final item in list) {
-          if (item is! Map) continue;
-          final token = item['nextContinuationData']?['continuation'] ??
-              item['reloadContinuationData']?['continuation'] ??
-              item['continuationCommand']?['token'];
-          if (token is String && token.length > 8) return token;
+    String? token;
+    void find(dynamic node) {
+      if (token != null || node == null) return;
+      if (node is Map) {
+        // Skip autoplay/related continuations that cause infinite loops of unrelated songs
+        if (node.containsKey('musicBottomActionRenderer') || 
+            node.containsKey('automixPreviewVideoRenderer')) return;
+        
+        final t = node['continuationCommand']?['token'] ?? 
+                  node['nextContinuationData']?['continuation'] ??
+                  node['reloadContinuationData']?['continuation'];
+                  
+        if (t is String && t.length > 8) {
+          token = t;
+          return;
         }
+        node.values.forEach(find);
+      } else if (node is List) {
+        node.forEach(find);
+      }
+    }
+    
+    // For playlists, try to restrict to the playlist shelf first to avoid grabbing related/mix tokens
+    try {
+      final shelf = data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['sectionListRenderer']?['contents']?[0]?['musicPlaylistShelfRenderer'] ??
+                    data['contents']?['twoColumnBrowseResultsRenderer']?['secondaryContents']?['sectionListRenderer']?['contents']?[0]?['musicPlaylistShelfRenderer'] ??
+                    data['continuationContents']?['musicPlaylistShelfContinuation'];
+      if (shelf != null) {
+        find(shelf['continuations']);
+        if (token != null) return token;
       }
     } catch (_) {}
-    return null;
+    
+    find(data);
+    return token;
   }
 
   Future<List<Song>> fetchRecents(Map<String, String> headers,

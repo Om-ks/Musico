@@ -290,18 +290,14 @@ class _PlayerScreenState extends State<PlayerScreen>
             onPressed: () => _shareSong(song),
           ),
           IconButton(
-            icon: Consumer<AccountProvider>(
-              builder: (ctx, account, _) {
-                final isLiked = account.youtubeAuthorized ? account.isSongLiked(song.id) : provider.isLiked;
-                return Icon(
-                  isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: isLiked ? const Color(0xFFB06EF3) : Colors.white70,
-                );
-              },
+            icon: Icon(
+              provider.isLiked ? Icons.favorite : Icons.favorite_border,
+              color:
+                  provider.isLiked ? const Color(0xFFB06EF3) : Colors.white70,
             ),
-            onPressed: () {
-              provider.toggleLike(account: context.read<AccountProvider>());
-            },
+            onPressed: () => provider.toggleLike(
+              account: context.read<AccountProvider>(),
+            ),
           ),
         ],
       ),

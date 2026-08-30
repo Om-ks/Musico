@@ -98,7 +98,7 @@ class YoutubeAccountService {
       final songs = await _fetchMusicBrowse(headers, 'VLLM', 'Liked Music');
       if (songs.isNotEmpty) {
         final finalSongs = _dedupeSongs(songs);
-        debugPrint('YT _fetchLikedSongs: VLLM fetch successful. Fetched \ songs.');
+        debugPrint('YT _fetchLikedSongs: VLLM fetch successful. Fetched ${finalSongs.length} songs.');
         return finalSongs;
       }
       return [];
@@ -108,9 +108,9 @@ class YoutubeAccountService {
     }
   }
 
-  Future<HomeFeedData> fetchHomeFeed(Map<String, String> headers) async {
+  Future<HomeFeedData> fetchHomeFeed(Map<String, String> headers, {String? continuationToken}) async {
     final sections = <MusicRecommendationSection>[];
-    final chips = <String>[];
+    final chips = <HomeFeedChip>[];
     try {
       final yt = ytm.YTMusic();
       if (!yt.hasInitialized) {
@@ -122,7 +122,7 @@ class YoutubeAccountService {
       
       final requestHeaders = _buildInnerTubeHeaders(headers);
 
-      final body = {
+      final Map<String, dynamic> body = {
         'context': {
           'client': {
             'clientName': clientName,
@@ -132,8 +132,13 @@ class YoutubeAccountService {
             'timeZone': 'UTC',
           }
         },
-        'browseId': 'FEmusic_home',
       };
+      
+      if (continuationToken != null) {
+        body['continuation'] = continuationToken;
+      } else {
+        body['browseId'] = 'FEmusic_home';
+      }
 
       final response = await http.post(
         Uri.parse('https://music.youtube.com/youtubei/v1/browse?key=$apiKey&prettyPrint=false'),
@@ -143,14 +148,20 @@ class YoutubeAccountService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final sectionList = data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['sectionListRenderer'];
+        
+        // Handle both initial load and continuation
+        final sectionList = data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['sectionListRenderer'] ??
+            data['continuationContents']?['sectionListContinuation'];
+            
         if (sectionList != null) {
           final headerChips = sectionList['header']?['chipCloudRenderer']?['chips'] as List?;
           if (headerChips != null) {
             for (final chip in headerChips) {
-              final text = chip['chipCloudChipRenderer']?['text']?['runs']?[0]?['text']?.toString();
+              final renderer = chip['chipCloudChipRenderer'];
+              final text = renderer?['text']?['runs']?[0]?['text']?.toString();
+              final token = renderer?['navigationEndpoint']?['continuationCommand']?['token']?.toString();
               if (text != null && text.isNotEmpty) {
-                chips.add(text);
+                chips.add(HomeFeedChip(text: text, token: token));
               }
             }
           }
@@ -158,7 +169,7 @@ class YoutubeAccountService {
           final contents = sectionList['contents'] as List?;
           if (contents != null) {
             for (final section in contents) {
-            final carousel = section['musicCarouselShelfRenderer'];
+            final carousel = section['musicCarouselShelfRenderer'] ?? section['musicImmersiveCarouselShelfRenderer'] ?? section['musicShelfRenderer'];
             if (carousel == null) continue;
             
             final titleObj = carousel['header']?['musicCarouselShelfBasicHeaderRenderer']?['title']?['runs']?[0];
@@ -244,7 +255,91 @@ class YoutubeAccountService {
             }
           }
         }
-      }
+        }
+        
+        // Fetch up to 2 more continuation pages to populate the home tab fully
+        String? nextToken = _extractContinuationToken(data);
+        int pages = 1;
+        
+        while (nextToken != null && pages < 3) {
+          final nextBody = {
+            'context': body['context'],
+            'continuation': nextToken,
+          };
+          
+          final nextResponse = await http.post(
+            Uri.parse('https://music.youtube.com/youtubei/v1/browse?key=$apiKey&prettyPrint=false'),
+            headers: requestHeaders,
+            body: jsonEncode(nextBody),
+          ).timeout(const Duration(seconds: 15));
+          
+          if (nextResponse.statusCode != 200) break;
+          
+          final nextData = jsonDecode(nextResponse.body);
+          final nextSectionList = nextData['continuationContents']?['sectionListContinuation'];
+          
+          if (nextSectionList != null) {
+            final nextContents = nextSectionList['contents'] as List?;
+            if (nextContents != null) {
+              for (final section in nextContents) {
+                final carousel = section['musicCarouselShelfRenderer'] ?? section['musicImmersiveCarouselShelfRenderer'] ?? section['musicShelfRenderer'];
+                if (carousel == null) continue;
+                
+                final titleObj = carousel['header']?['musicCarouselShelfBasicHeaderRenderer']?['title']?['runs']?[0] ?? carousel['header']?['musicCarouselShelfBasicHeaderRenderer']?['title'];
+                final title = titleObj?['text']?.toString() ?? 'Recommended';
+                
+                final items = carousel['contents'] as List?;
+                if (items == null || items.isEmpty) continue;
+                
+                final songs = <Song>[];
+                final playlists = <MusicPlaylist>[];
+                
+                for (final item in items) {
+                  final twoRow = item['musicTwoRowItemRenderer'];
+                  final responsive = item['musicResponsiveListItemRenderer'];
+                  
+                  if (twoRow != null) {
+                    final id = twoRow['navigationEndpoint']?['watchPlaylistEndpoint']?['playlistId']?.toString() ??
+                               twoRow['navigationEndpoint']?['watchEndpoint']?['playlistId']?.toString() ??
+                               twoRow['navigationEndpoint']?['browseEndpoint']?['browseId']?.toString() ??
+                               twoRow['navigationEndpoint']?['watchEndpoint']?['videoId']?.toString();
+                    if (id == null || id.isEmpty) continue;
+                    
+                    final titleText = twoRow['title']?['runs']?[0]?['text']?.toString() ?? 'Unknown';
+                    final subtitleText = (twoRow['subtitle']?['runs'] as List?)?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+                    
+                    final thumbnails = twoRow['thumbnailRenderer']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
+                    final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
+                    
+                    String finalId = id.startsWith('VL') ? id.substring(2) : id;
+                    playlists.add(MusicPlaylist(id: finalId, title: titleText, owner: subtitleText, thumbnailUrl: thumb, itemCount: 0, source: 'youtube'));
+                  } else if (responsive != null) {
+                    final flexColumns = responsive['flexColumns'] as List?;
+                    if (flexColumns == null || flexColumns.isEmpty) continue;
+                    
+                    final titleText = flexColumns[0]?['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs']?[0]?['text']?.toString() ?? 'Unknown';
+                    final subtitleText = (flexColumns.length > 1) 
+                        ? ((flexColumns[1]?['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs'] as List?)?.map((r) => r['text']?.toString() ?? '').join('') ?? '')
+                        : '';
+                    
+                    final thumbnails = responsive['thumbnail']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
+                    final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
+                    
+                    final videoId = responsive['overlay']?['musicItemThumbnailOverlayRenderer']?['content']?['musicPlayButtonRenderer']?['playNavigationEndpoint']?['watchEndpoint']?['videoId']?.toString();
+                    if (videoId == null || videoId.isEmpty) continue;
+                    
+                    songs.add(Song(id: videoId, title: titleText, artist: subtitleText, album: 'YouTube Music', thumbnailUrl: thumb, duration: 0, source: 'youtube'));
+                  }
+                }
+                if (songs.isNotEmpty || playlists.isNotEmpty) {
+                   sections.add(MusicRecommendationSection(title: title, songs: songs, playlists: playlists));
+                }
+              }
+            }
+          }
+          nextToken = _extractContinuationToken(nextData);
+          pages++;
+        }
       }
     } catch (e) {
       debugPrint('Error fetching home feed: $e');
@@ -274,8 +369,6 @@ class YoutubeAccountService {
       final clientName = yt.config['INNERTUBE_CONTEXT_CLIENT_NAME'] ?? 'WEB_REMIX';
       final clientVersion = yt.config['INNERTUBE_CLIENT_VERSION'] ?? '1.20240610.01.00';
       
-      final cookieString = headers['Cookie'] ?? '';
-
       final requestHeaders = _buildInnerTubeHeaders(headers);
 
       final body = {
@@ -379,13 +472,17 @@ class YoutubeAccountService {
   String? _extractContinuationToken(dynamic data) {
     try {
       final directLists = [
-        data['continuationContents']?['musicPlaylistShelfContinuation']
-            ?['continuations'],
-        data['continuationContents']?['musicShelfContinuation']
-            ?['continuations'],
-        data['continuationContents']?['sectionListContinuation']
-            ?['continuations'],
+        data['continuationContents']?['musicPlaylistShelfContinuation']?['continuations'],
+        data['continuationContents']?['musicShelfContinuation']?['continuations'],
+        data['continuationContents']?['sectionListContinuation']?['continuations'],
+        data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['sectionListRenderer']?['continuations'],
+        data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['musicPlaylistShelfRenderer']?['continuations'],
+        data['contents']?['sectionListRenderer']?['continuations'],
+        data['contents']?['musicPlaylistShelfRenderer']?['continuations'],
+        data['contents']?['twoColumnBrowseResultsRenderer']?['secondaryContents']?['sectionListRenderer']?['contents']?[0]?['musicPlaylistShelfRenderer']?['continuations'],
+        data['contents']?['twoColumnBrowseResultsRenderer']?['secondaryContents']?['sectionListRenderer']?['continuations'],
       ];
+
       for (final list in directLists) {
         if (list is! List) continue;
         for (final item in list) {
@@ -396,38 +493,6 @@ class YoutubeAccountService {
           if (token is String && token.length > 8) return token;
         }
       }
-
-      final nodes = _findNodesRecursive(data, 'continuationItemRenderer');
-      for (final node in nodes) {
-        if (node is Map) {
-          final token = node['continuationEndpoint']?['continuationCommand']
-                  ?['token'] ??
-              node['continuationEndpoint']?['token'];
-          if (token is String && token.length > 8) return token;
-        }
-      }
-
-      final continuationCommands =
-          _findNodesRecursive(data, 'continuationCommand');
-      for (final command in continuationCommands) {
-        if (command is Map) {
-          final token = command['token'];
-          if (token is String && token.length > 8) return token;
-        }
-      }
-
-      final endpointTokens = _findNodesRecursive(data, 'nextContinuationData');
-      for (final endpoint in endpointTokens) {
-        if (endpoint is Map) {
-          final token = endpoint['continuation'];
-          if (token is String && token.length > 8) return token;
-        }
-      }
-
-      final conts = _findNodesRecursive(data, 'continuation');
-      for (final c in conts) {
-        if (c is String && c.length > 8) return c;
-      }
     } catch (_) {}
     return null;
   }
@@ -435,16 +500,7 @@ class YoutubeAccountService {
   Future<List<Song>> fetchRecents(Map<String, String> headers,
       {int maxPages = 3}) async {
     try {
-      final Map<String, String> requestHeaders = {
-        ...headers,
-        'Content-Type': 'application/json',
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-        'X-Youtube-Client-Name': '67',
-        'X-Youtube-Client-Version': '1.20240610.01.00',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-      };
+      final requestHeaders = _buildInnerTubeHeaders(headers);
 
       final response = await http
           .post(
@@ -740,9 +796,9 @@ class YoutubeAccountService {
     }
 
 
-    // 2. Duration filter (shorts under 15 seconds are blocked, except explicitly ringtones)
-    if (song.duration > 0 && song.duration < 15) {
-      final shortAllow = ['ringtone', 'loop', 'intro', 'outro', 'beat'];
+    // 2. Duration filter (shorts under 75 seconds are blocked, except explicitly ringtones/interludes)
+    if (song.duration > 0 && song.duration <= 75) {
+      final shortAllow = ['ringtone', 'loop', 'intro', 'outro', 'beat', 'interlude'];
       if (!shortAllow.any((w) => lowerTitle.contains(w))) {
         return false;
       }
@@ -1047,30 +1103,65 @@ class YoutubeAccountService {
               ?['tabRenderer']?['content']?['sectionListRenderer']?['contents'];
           if (contents != null && contents is List) {
             for (final section in contents) {
-              final grid = section['gridRenderer'];
-              final items = grid?['items'] as List?;
+              final grid = section['gridRenderer'] ?? section['musicShelfRenderer'];
+              final items = grid?['items'] ?? grid?['contents'] as List?;
               if (items == null) continue;
 
               for (final item in items) {
-                final renderer = item['musicTwoColumnItemRenderer'];
+                // YouTube Music uses different renderers across versions
+                final renderer = item['musicTwoColumnItemRenderer'] ??
+                    item['musicTwoRowItemRenderer'] ??
+                    item['musicResponsiveListItemRenderer'];
                 if (renderer == null) continue;
 
-                final title =
-                    renderer['title']?['runs']?[0]?['text'] ?? 'Unknown';
-                final browseId = renderer['navigationEndpoint']
+                // Title extraction - handle both formats
+                String title = 'Unknown';
+                if (renderer['title']?['runs'] != null) {
+                  title = renderer['title']['runs'][0]['text'] ?? 'Unknown';
+                } else if (renderer['flexColumns'] != null) {
+                  final cols = renderer['flexColumns'] as List?;
+                  if (cols != null && cols.isNotEmpty) {
+                    title = cols[0]?['musicResponsiveListItemFlexColumnRenderer']
+                        ?['text']?['runs']?[0]?['text'] ?? 'Unknown';
+                  }
+                }
+
+                // Browse ID extraction
+                String? browseId = renderer['navigationEndpoint']
                     ?['browseEndpoint']?['browseId'];
-                if (browseId == null || !browseId.startsWith('VL')) continue;
+                // Also check overlay for browse endpoint
+                browseId ??= renderer['overlay']?['musicItemThumbnailOverlayRenderer']
+                      ?['content']?['musicPlayButtonRenderer']
+                      ?['playNavigationEndpoint']?['watchPlaylistEndpoint']?['playlistId'];
+                if (browseId == null) continue;
+                
+                // Handle VL prefix
+                final playlistId = browseId.startsWith('VL') ? browseId.substring(2) : browseId;
+                if (playlistId.isEmpty) continue;
 
-                final playlistId = browseId.substring(2); // Remove 'VL' prefix
-                final subtitle =
-                    renderer['subtitle']?['runs']?[0]?['text'] ?? '';
+                // Subtitle extraction
+                String subtitle = '';
+                if (renderer['subtitle']?['runs'] != null) {
+                  subtitle = (renderer['subtitle']['runs'] as List)
+                      .map((r) => r['text']?.toString() ?? '').join('');
+                } else if (renderer['flexColumns'] != null) {
+                  final cols = renderer['flexColumns'] as List?;
+                  if (cols != null && cols.length > 1) {
+                    final runs = cols[1]?['musicResponsiveListItemFlexColumnRenderer']
+                        ?['text']?['runs'] as List?;
+                    subtitle = runs?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+                  }
+                }
 
+                // Thumbnail extraction
                 final thumbnails = renderer['thumbnail']
+                        ?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] ??
+                    renderer['thumbnailRenderer']
                         ?['musicThumbnailRenderer']?['thumbnail']?['thumbnails']
                     as List?;
                 String thumb = '';
-                if (thumbnails != null && thumbnails.isNotEmpty) {
-                  thumb = thumbnails.last['url'];
+                if (thumbnails != null && thumbnails is List && thumbnails.isNotEmpty) {
+                  thumb = thumbnails.last['url']?.toString() ?? '';
                 }
 
                 musicPlaylists.add(MusicPlaylist(
@@ -1084,40 +1175,13 @@ class YoutubeAccountService {
               }
             }
           }
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('YouTube fetchPlaylists InnerTube parse error: $e');
+        }
       }
 
-      List<MusicPlaylist> ytPlaylists = [];
-      try {
-        final items = await _fetchPagedItems(
-          headers,
-          'playlists',
-          {
-            'part': 'snippet,contentDetails,status',
-            'mine': 'true',
-            'maxResults': '50',
-          },
-          maxPages: 20,
-        );
-
-        ytPlaylists = items.map((item) {
-          final snippet = item['snippet'];
-          return MusicPlaylist(
-            id: item['id'],
-            title: _unescape(snippet['title']),
-            owner: snippet['channelTitle'],
-            thumbnailUrl: _bestThumbnail(snippet['thumbnails']),
-            itemCount: item['contentDetails']?['itemCount'] ?? 0,
-            source: 'youtube',
-          );
-        }).toList();
-      } catch (e) {
-        debugPrint('YouTube fetchPlaylists standard API call failed (possibly quota): $e');
-      }
-
-      final combined = [...musicPlaylists, ...ytPlaylists];
       final uniquePlaylists = <String, MusicPlaylist>{};
-      for (final p in combined) {
+      for (final p in musicPlaylists) {
         final key = p.title.trim().toLowerCase();
         final existing = uniquePlaylists[key];
         if (existing == null || p.itemCount > existing.itemCount) {

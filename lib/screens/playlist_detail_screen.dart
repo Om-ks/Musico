@@ -61,27 +61,28 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
     setState(() => _loading = true);
     final account = context.read<AccountProvider>();
     List<Song> songs = [];
-    if (account.hasLiveSession && account.youtubeAuthorized) {
-      final headers = await account.getAuthHeaders();
-      if (headers != null) {
-        try {
-          songs = await YoutubeAccountService().fetchPlaylistSongs(
-            headers,
-            widget.playlist.id,
-            album: widget.playlist.title,
-          );
-        } catch (e) {
-          debugPrint('Auth playlist fetch failed, trying public fallback: $e');
-        }
-      }
+    
+    // Always try InnerTube API first (works for both auth and guest)
+    final headers = await account.getAuthHeaders() ?? <String, String>{};
+    try {
+      songs = await YoutubeAccountService().fetchPlaylistSongs(
+        headers,
+        widget.playlist.id,
+        album: widget.playlist.title,
+      );
+    } catch (e) {
+      debugPrint('InnerTube playlist fetch failed: $e');
     }
+    
+    // Fallback to Data API / Scraper
     if (songs.isEmpty) {
       try {
         songs = await ApiService.getPlaylistSongs(widget.playlist);
       } catch (e) {
-        debugPrint('Public playlist fetch failed: $e');
+        debugPrint('Public playlist fetch fallback failed: $e');
       }
     }
+    
     if (!mounted) return;
     setState(() {
       _songs = songs;

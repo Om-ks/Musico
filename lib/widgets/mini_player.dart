@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:marquee/marquee.dart';
 import '../providers/player_provider.dart';
 import '../screens/player_screen.dart';
-import 'glass_container.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -79,29 +79,45 @@ class MiniPlayer extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              song.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
+                            SizedBox(
+                              height: 18,
+                              child: Marquee(
+                                text: song.title,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                                scrollAxis: Axis.horizontal,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                blankSpace: 40.0,
+                                velocity: 30.0,
+                                startPadding: 0.0,
+                                pauseAfterRound: const Duration(seconds: 2),
+                                startAfter: const Duration(seconds: 2),
                               ),
                             ),
                             const SizedBox(height: 2),
                             AnimatedSwitcher(
                               duration: const Duration(milliseconds: 180),
-                              child: Text(
-                                subtitle,
+                              child: SizedBox(
+                                height: 16,
                                 key: ValueKey(subtitle),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: provider.error == PlayerError.none
-                                      ? Colors.white.withValues(alpha: 0.5)
-                                      : const Color(0xFFFF8A80),
-                                  fontSize: 11,
+                                child: Marquee(
+                                  text: subtitle,
+                                  style: TextStyle(
+                                    color: provider.error == PlayerError.none
+                                        ? Colors.white.withValues(alpha: 0.5)
+                                        : const Color(0xFFFF8A80),
+                                    fontSize: 11,
+                                  ),
+                                  scrollAxis: Axis.horizontal,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  blankSpace: 40.0,
+                                  velocity: 25.0,
+                                  startPadding: 0.0,
+                                  pauseAfterRound: const Duration(seconds: 2),
+                                  startAfter: const Duration(seconds: 2),
                                 ),
                               ),
                             ),

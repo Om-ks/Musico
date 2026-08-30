@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class LoginWebviewScreen extends StatefulWidget {
@@ -10,6 +11,7 @@ class LoginWebviewScreen extends StatefulWidget {
 
 class _LoginWebviewScreenState extends State<LoginWebviewScreen> {
   late final WebViewController _controller;
+  static const _cookieChannel = MethodChannel('musico/cookies');
   bool _isLoading = true;
 
   @override
@@ -17,7 +19,9 @@ class _LoginWebviewScreenState extends State<LoginWebviewScreen> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setUserAgent('Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36')
+      ..setUserAgent(
+          'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 '
+          '(KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36')
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (String url) {
@@ -29,25 +33,37 @@ class _LoginWebviewScreenState extends State<LoginWebviewScreen> {
             setState(() {
               _isLoading = false;
             });
-            await _checkForCookies();
+            if (url.contains('youtube.com')) {
+              await _checkForCookies();
+            }
           },
         ),
       )
-      ..loadRequest(Uri.parse('https://accounts.google.com/ServiceLogin?service=youtube&passive=1209600&continue=https://music.youtube.com/'));
+      ..loadRequest(Uri.parse(
+          'https://accounts.google.com/ServiceLogin'
+          '?service=youtube&passive=1209600'
+          '&continue=https://music.youtube.com/'));
   }
 
   Future<void> _checkForCookies() async {
     try {
-      final Object result = await _controller.runJavaScriptReturningResult('document.cookie');
-      final String cookies = result.toString().replaceAll('"', ''); // Sometimes returned with quotes
-      
-      if (cookies.contains('SAPISID=')) {
+      // Use native Android CookieManager to get ALL cookies
+      // including HttpOnly ones that JavaScript cannot access
+      final String? cookies = await _cookieChannel.invokeMethod<String>(
+        'getCookies',
+        {'url': 'https://music.youtube.com'},
+      );
+
+      debugPrint('LoginWebview: Got cookies: ${cookies != null ? "${cookies.length} chars" : "null"}');
+
+      if (cookies != null && cookies.contains('SAPISID=')) {
+        debugPrint('LoginWebview: SAPISID found! Returning cookies to app.');
         if (mounted) {
           Navigator.of(context).pop(cookies);
         }
       }
     } catch (e) {
-      debugPrint('Error extracting cookies via JS: $e');
+      debugPrint('Error extracting cookies: $e');
     }
   }
 
@@ -64,7 +80,8 @@ class _LoginWebviewScreenState extends State<LoginWebviewScreen> {
               child: SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
               ),
             )
         ],

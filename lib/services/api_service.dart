@@ -22,8 +22,14 @@ class MusicRecommendationSection {
   });
 }
 
+class HomeFeedChip {
+  final String text;
+  final String? token;
+  const HomeFeedChip({required this.text, this.token});
+}
+
 class HomeFeedData {
-  final List<String> chips;
+  final List<HomeFeedChip> chips;
   final List<MusicRecommendationSection> sections;
 
   const HomeFeedData({

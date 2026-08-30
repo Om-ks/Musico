@@ -11,6 +11,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.webkit.CookieManager
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -84,6 +85,21 @@ class MainActivity : AudioServiceActivity() {
                     }.onFailure { error ->
                         result.error("SHARE_FAILED", error.message, null)
                     }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "musico/cookies"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getCookies" -> {
+                    val url = call.argument<String>("url") ?: "https://music.youtube.com"
+                    val cookieManager = CookieManager.getInstance()
+                    val cookies = cookieManager.getCookie(url)
+                    result.success(cookies)
                 }
                 else -> result.notImplemented()
             }

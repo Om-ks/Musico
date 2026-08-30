@@ -27,6 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loading = true;
   bool _isFetching = false;
   String? _lastAuthState;
+  String? _selectedChipText;
 
   @override
   void initState() {
@@ -39,11 +40,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onAuthChanged(String newState) {
     if (_lastAuthState != newState) {
       _lastAuthState = newState;
+      _selectedChipText = null;
       _fetchFeed(firstLoad: true);
     }
   }
 
-  Future<void> _fetchFeed({bool firstLoad = false}) async {
+  Future<void> _fetchFeed({bool firstLoad = false, String? token}) async {
     if (_isFetching) return; // prevent overlapping calls
     _isFetching = true;
     if (mounted && firstLoad) setState(() => _loading = true);
@@ -51,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final account = context.read<AccountProvider>();
       if (account.youtubeAuthorized) {
-        final data = await account.fetchHomeFeed();
+        final data = await account.fetchHomeFeed(continuationToken: token);
         if (mounted) setState(() => _feedData = data);
       } else {
         final history = await _storage.getListeningHistory();
@@ -66,11 +68,25 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _onChipTapped(HomeFeedChip chip) {
+    if (_selectedChipText == chip.text) {
+      // Deselect chip
+      setState(() {
+        _selectedChipText = null;
+      });
+      _fetchFeed(firstLoad: true, token: null);
+    } else {
+      // Select chip
+      setState(() {
+        _selectedChipText = chip.text;
+      });
+      _fetchFeed(firstLoad: true, token: chip.token);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final account = context.watch<AccountProvider>();
-    final ytLib = account.library;
-    final signedIn = account.isSignedIn;
     // Trigger feed refresh when sign-in state changes (without setState loop)
     final authState = '${account.isSignedIn}_${account.youtubeAuthorized}';
     SchedulerBinding.instance.addPostFrameCallback((_) => _onAuthChanged(authState));
@@ -89,37 +105,6 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverToBoxAdapter(
                 child: _buildChips(_feedData!.chips),
               ),
-
-            // YouTube Library Sections
-            if (signedIn && account.youtubeAuthorized) ...[
-              if (ytLib.likedSongs.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _buildSectionLabel('Your Liked Music'),
-                ),
-                SliverToBoxAdapter(
-                  child: _buildHorizontalCards(ytLib.likedSongs),
-                ),
-              ],
-              if (ytLib.playlists.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _buildSectionLabel('Your Playlists'),
-                ),
-                SliverToBoxAdapter(
-                  child: _buildPlaylistCards(ytLib.playlists.take(10).toList()),
-                ),
-              ],
-              if (ytLib.recentSongs.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _buildSectionLabel('Recently Played (YouTube)'),
-                ),
-                SliverToBoxAdapter(
-                  child: _buildHorizontalCards(
-                    ytLib.recentSongs.take(10).toList(),
-                    isRecents: true,
-                  ),
-                ),
-              ],
-            ],
 
             if (_feedData != null)
               for (final section in _feedData!.sections) ...[
@@ -195,30 +180,36 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-    Widget _buildChips(List<String> chips) {
+    Widget _buildChips(List<HomeFeedChip> chips) {
     return SizedBox(
-      height: 48,
+      height: 56,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         itemCount: chips.length,
         itemBuilder: (ctx, i) {
+          final chip = chips[i];
+          final isSelected = _selectedChipText == chip.text;
+          
           return Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A2E),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Center(
-                child: Text(
-                  chips[i],
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+            child: GestureDetector(
+              onTap: () => _onChipTapped(chip),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.white : const Color(0xFF1A1A2E),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: isSelected ? Colors.transparent : Colors.white12),
+                ),
+                child: Center(
+                  child: Text(
+                    chip.text,
+                    style: TextStyle(
+                      color: isSelected ? Colors.black : Colors.white,
+                      fontSize: 14,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    ),
                   ),
                 ),
               ),

@@ -853,12 +853,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  song.artist,
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      fontSize: 14),
+                SizedBox(
+                  height: 20,
+                  child: MarqueeText(
+                    text: song.artist,
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 14),
+                  ),
                 ),
                 const SizedBox(height: 4),
                 AnimatedSwitcher(

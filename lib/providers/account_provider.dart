@@ -722,14 +722,10 @@ class AccountProvider extends ChangeNotifier {
     return {'Cookie': cookie};
   }
 
-  Future<HomeFeedData> fetchHomeFeed() async {
+  Future<HomeFeedData> fetchHomeFeed({String? continuationToken}) async {
     final headers = await getAuthHeaders();
     if (headers == null) return const HomeFeedData(chips: [], sections: []);
-    return await _youtubeAccountService.fetchHomeFeed(headers);
+    return await _youtubeAccountService.fetchHomeFeed(headers, continuationToken: continuationToken);
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-  }
 }

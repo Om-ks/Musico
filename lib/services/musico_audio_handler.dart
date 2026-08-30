@@ -116,11 +116,12 @@ class MusicoAudioHandler extends BaseAudioHandler {
     playbackState.add(
       PlaybackState(
         controls: controls,
-        androidCompactActionIndices: const [0, 1, 2],
+        androidCompactActionIndices: const [0, 1, 2, 3],
         systemActions: const {
           MediaAction.seek,
           MediaAction.skipToPrevious,
           MediaAction.skipToNext,
+          MediaAction.setRepeatMode,
         },
         processingState: hasError
             ? AudioProcessingState.error

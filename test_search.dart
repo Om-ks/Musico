@@ -1,0 +1,1 @@
+import 'package:flutter/widgets.dart'; import 'lib/services/api_service.dart'; void main() async { WidgetsFlutterBinding.ensureInitialized(); final songs = await ApiService.search('ariana grande'); print('Found  songs'); }

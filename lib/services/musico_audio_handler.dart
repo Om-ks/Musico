@@ -18,15 +18,15 @@ class MusicoAudioHandler extends BaseAudioHandler {
     label: 'Loading',
     action: MediaAction.pause,
   );
-  static const MediaControl _repeatOffControl = MediaControl(
+  static final MediaControl _repeatOffControl = MediaControl.custom(
     androidIcon: 'drawable/audio_service_repeat',
     label: 'Repeat Off',
-    action: MediaAction.setRepeatMode,
+    name: 'repeatOff',
   );
-  static const MediaControl _repeatOneControl = MediaControl(
+  static final MediaControl _repeatOneControl = MediaControl.custom(
     androidIcon: 'drawable/audio_service_repeat_one',
     label: 'Repeat One',
-    action: MediaAction.setRepeatMode,
+    name: 'repeatOne',
   );
 
   PlaybackCallback? onPlayRequested;
@@ -206,5 +206,14 @@ class MusicoAudioHandler extends BaseAudioHandler {
   @override
   Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
     await onRepeatModeRequested?.call(repeatMode);
+  }
+
+  @override
+  Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
+    if (name == 'repeatOff') {
+      await onRepeatModeRequested?.call(AudioServiceRepeatMode.one);
+    } else if (name == 'repeatOne') {
+      await onRepeatModeRequested?.call(AudioServiceRepeatMode.none);
+    }
   }
 }

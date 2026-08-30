@@ -31,6 +31,20 @@ class YoutubeAccountService {
 
   static const _base = 'https://www.googleapis.com/youtube/v3/';
 
+  // Helper to extract clean subtitle and item count from raw subtitle string
+  ({String subtitle, int count}) _parseSubtitleAndCount(String raw) {
+    if (raw.isEmpty) return (subtitle: '', count: 0);
+    int count = 0;
+    final match = RegExp(r'(\d+)\s+songs?').firstMatch(raw);
+    if (match != null) {
+      count = int.tryParse(match.group(1)!) ?? 0;
+    }
+    String clean = raw.replaceAll(RegExp(r'^Playlist\s*•\s*'), '').trim();
+    clean = clean.replaceAll(RegExp(r'\s*•\s*[\d,.]+[KMBkmb]?\s+(?:views?|plays?)'), '').trim();
+    // Also remove year or extra bullets if it ends with them, or just let it be.
+    return (subtitle: clean, count: count);
+  }
+
   Future<AccountLibrary> fetchLibrary(Map<String, String> headers) async {
     debugPrint('YouTubeAccountService: Starting fetchLibrary...');
     List<Song> likedSongs = [];
@@ -172,8 +186,8 @@ class YoutubeAccountService {
             final carousel = section['musicCarouselShelfRenderer'] ?? section['musicImmersiveCarouselShelfRenderer'] ?? section['musicShelfRenderer'];
             if (carousel == null) continue;
             
-            final titleObj = carousel['header']?['musicCarouselShelfBasicHeaderRenderer']?['title']?['runs']?[0];
-            final title = titleObj?['text']?.toString() ?? 'Recommended';
+            final titleRuns = carousel['header']?['musicCarouselShelfBasicHeaderRenderer']?['title']?['runs'] as List?;
+            final title = titleRuns?.map((r) => r['text']?.toString() ?? '').join('') ?? 'Recommended';
             
             final items = carousel['contents'] as List?;
             if (items == null || items.isEmpty) continue;
@@ -198,8 +212,9 @@ class YoutubeAccountService {
                 if (playlistId == null && videoId == null) continue;
                 
                 final titleText = twoRow['title']?['runs']?[0]?['text']?.toString() ?? 'Unknown';
-                // Only take the first run for subtitle to avoid view counts
-                final subtitleText = (twoRow['subtitle']?['runs'] as List?)?.firstWhere((r) => r['text'] != null, orElse: () => {})['text']?.toString() ?? '';
+                
+                final rawSubtitle = (twoRow['subtitle']?['runs'] as List?)?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+                final parsedInfo = _parseSubtitleAndCount(rawSubtitle);
                 
                 final thumbnails = twoRow['thumbnailRenderer']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
                 final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
@@ -209,16 +224,16 @@ class YoutubeAccountService {
                   playlists.add(MusicPlaylist(
                     id: finalId,
                     title: titleText,
-                    owner: subtitleText,
+                    owner: parsedInfo.subtitle,
                     thumbnailUrl: thumb,
-                    itemCount: 0,
+                    itemCount: parsedInfo.count,
                     source: 'youtube'
                   ));
                 } else if (videoId != null && videoId.isNotEmpty) {
                   songs.add(Song(
                     id: videoId,
                     title: titleText,
-                    artist: subtitleText,
+                    artist: parsedInfo.subtitle,
                     album: 'YouTube Music',
                     thumbnailUrl: thumb,
                     duration: 0,
@@ -235,7 +250,8 @@ class YoutubeAccountService {
                 final subtitleRuns = (flexColumns.length > 1) 
                     ? (flexColumns[1]?['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs'] as List?)
                     : null;
-                final subtitleText = subtitleRuns?.firstWhere((r) => r['text'] != null, orElse: () => {})['text']?.toString() ?? '';
+                final rawSubtitle = subtitleRuns?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+                final parsedInfo = _parseSubtitleAndCount(rawSubtitle);
                 
                 final thumbnails = responsive['thumbnail']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
                 final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
@@ -249,7 +265,7 @@ class YoutubeAccountService {
                 songs.add(Song(
                   id: videoId,
                   title: titleText,
-                  artist: subtitleText,
+                  artist: parsedInfo.subtitle,
                   album: 'YouTube Music',
                   thumbnailUrl: thumb,
                   duration: 0,
@@ -433,7 +449,7 @@ class YoutubeAccountService {
           album: albumName,
           allowVideoFallback: allowVideoFallback,
         ));
-        continuationToken = _extractContinuationToken(data);
+        continuationToken = _extractContinuationToken(data, isPlaylist: true);
         debugPrint(
             'YT Browse ($browseId): First page fetched ${allSongs.length} songs, continuation: ${continuationToken != null}');
       } else {
@@ -478,7 +494,7 @@ class YoutubeAccountService {
             allowVideoFallback: allowVideoFallback,
           );
           allSongs.addAll(newSongs);
-          continuationToken = _extractContinuationToken(data);
+          continuationToken = _extractContinuationToken(data, isPlaylist: true);
           pages++;
           debugPrint(
               'YT Browse ($browseId): Page $pages fetched ${newSongs.length} songs, total: ${allSongs.length}, hasMore: ${continuationToken != null}');
@@ -501,7 +517,7 @@ class YoutubeAccountService {
   }
 
 
-  String? _extractContinuationToken(dynamic data) {
+  String? _extractContinuationToken(dynamic data, {bool isPlaylist = false}) {
     String? token;
     void find(dynamic node) {
       if (token != null || node == null) return;
@@ -510,6 +526,10 @@ class YoutubeAccountService {
         if (node.containsKey('musicBottomActionRenderer') || 
             node.containsKey('automixPreviewVideoRenderer')) return;
         
+        // Also skip generic itemSectionRenderer if we're parsing a playlist 
+        // to prevent grabbing the "Suggested" songs token
+        if (isPlaylist && node.containsKey('itemSectionRenderer')) return;
+
         final t = node['continuationCommand']?['token'] ?? 
                   node['nextContinuationData']?['continuation'] ??
                   node['reloadContinuationData']?['continuation'];
@@ -535,6 +555,10 @@ class YoutubeAccountService {
       }
     } catch (_) {}
     
+    // If it's a playlist, we strictly DO NOT fall back to global recursive search, 
+    // because that will find the "Suggested songs" section and loop endlessly.
+    if (isPlaylist) return token;
+
     find(data);
     return token;
   }
@@ -1179,21 +1203,23 @@ class YoutubeAccountService {
                 
                 // Handle VL prefix
                 final playlistId = browseId.startsWith('VL') ? browseId.substring(2) : browseId;
-                if (playlistId.isEmpty) continue;
+                if (playlistId.isEmpty || playlistId == 'LM' || playlistId == 'SE' || playlistId == 'FEmusic_history' || playlistId.startsWith('RD')) continue;
 
                 // Subtitle extraction
-                String subtitle = '';
+                String rawSubtitle = '';
                 if (renderer['subtitle']?['runs'] != null) {
-                  subtitle = (renderer['subtitle']['runs'] as List)
+                  rawSubtitle = (renderer['subtitle']['runs'] as List)
                       .map((r) => r['text']?.toString() ?? '').join('');
                 } else if (renderer['flexColumns'] != null) {
                   final cols = renderer['flexColumns'] as List?;
                   if (cols != null && cols.length > 1) {
                     final runs = cols[1]?['musicResponsiveListItemFlexColumnRenderer']
                         ?['text']?['runs'] as List?;
-                    subtitle = runs?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+                    rawSubtitle = runs?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
                   }
                 }
+                
+                final parsedInfo = _parseSubtitleAndCount(_unescape(rawSubtitle));
 
                 // Thumbnail extraction
                 final thumbnails = renderer['thumbnail']
@@ -1209,9 +1235,9 @@ class YoutubeAccountService {
                 musicPlaylists.add(MusicPlaylist(
                   id: playlistId,
                   title: _unescape(title),
-                  owner: _unescape(subtitle),
+                  owner: parsedInfo.subtitle,
                   thumbnailUrl: thumb,
-                  itemCount: 0,
+                  itemCount: parsedInfo.count,
                   source: 'youtube',
                 ));
               }

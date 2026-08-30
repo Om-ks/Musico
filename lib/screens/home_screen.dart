@@ -182,10 +182,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     Widget _buildChips(List<HomeFeedChip> chips) {
     return SizedBox(
-      height: 56,
+      height: 48,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         itemCount: chips.length,
         itemBuilder: (ctx, i) {
           final chip = chips[i];
@@ -196,20 +196,19 @@ class _HomeScreenState extends State<HomeScreen> {
             child: GestureDetector(
               onTap: () => _onChipTapped(chip),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.white : const Color(0xFF1A1A2E),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: isSelected ? Colors.transparent : Colors.white12),
+                  color: isSelected ? Colors.white : const Color(0xFF212121), // YT Music dark grey chip
+                  borderRadius: BorderRadius.circular(18), // Pill shape
+                  border: Border.all(color: isSelected ? Colors.transparent : Colors.white24, width: 0.5),
                 ),
-                child: Center(
-                  child: Text(
-                    chip.text,
-                    style: TextStyle(
-                      color: isSelected ? Colors.black : Colors.white,
-                      fontSize: 14,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                    ),
+                child: Text(
+                  chip.text,
+                  style: TextStyle(
+                    color: isSelected ? Colors.black : Colors.white,
+                    fontSize: 15,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                   ),
                 ),
               ),

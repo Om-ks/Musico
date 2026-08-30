@@ -1,8 +1,21 @@
-with open('lib/screens/login_webview_screen.dart', 'r', encoding='utf-8') as f:
-    text = f.read()
+with open('lib/screens/player_screen.dart', 'r', encoding='utf-8') as f:
+    content = f.read()
 
-text = text.replace(r'final cookieString = cookies.map((c) => \'\\=\\\').join(\'; \');', r'final cookieString = cookies.map((c) => \'=\').join(\'; \');')
-text = text.replace(r'debugPrint(\'Error extracting cookies: \\\');', r'debugPrint(\'Error extracting cookies: \');')
+old_str = \"\"\"            onPressed: () {
+              provider.toggleLike(account: context.read<AccountProvider>());
+            },
+              account: context.read<AccountProvider>(),
+            ),
+          ),
+        ],\"\"\"
 
-with open('lib/screens/login_webview_screen.dart', 'w', encoding='utf-8') as f:
-    f.write(text)
+new_str = \"\"\"            onPressed: () {
+              provider.toggleLike(account: context.read<AccountProvider>());
+            },
+          ),
+        ],\"\"\"
+
+content = content.replace(old_str, new_str)
+
+with open('lib/screens/player_screen.dart', 'w', encoding='utf-8') as f:
+    f.write(content)

@@ -292,7 +292,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           IconButton(
             icon: Consumer<AccountProvider>(
               builder: (ctx, account, _) {
-                final isLiked = account.isLoggedIn ? account.isSongLiked(song.id) : provider.isLiked;
+                final isLiked = account.youtubeAuthorized ? account.isSongLiked(song.id) : provider.isLiked;
                 return Icon(
                   isLiked ? Icons.favorite : Icons.favorite_border,
                   color: isLiked ? const Color(0xFFB06EF3) : Colors.white70,

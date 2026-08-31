@@ -527,7 +527,9 @@ class YoutubeAccountService {
       if (node is Map) {
         // Skip autoplay/related continuations that cause infinite loops of unrelated songs
         if (node.containsKey('musicBottomActionRenderer') || 
-            node.containsKey('automixPreviewVideoRenderer')) return;
+            node.containsKey('automixPreviewVideoRenderer') ||
+            node.containsKey('chipCloudRenderer') ||
+            node.containsKey('chipCloudChipRenderer')) return;
         
         // Also skip generic itemSectionRenderer if we're parsing a playlist 
         // to prevent grabbing the "Suggested" songs token

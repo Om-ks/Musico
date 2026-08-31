@@ -64,14 +64,19 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
     
     // Always try InnerTube API first (works for both auth and guest)
     final headers = await account.getAuthHeaders() ?? <String, String>{};
-    try {
-      songs = await YoutubeAccountService().fetchPlaylistSongs(
-        headers,
-        widget.playlist.id,
-        album: widget.playlist.title,
-      );
-    } catch (e) {
-      debugPrint('InnerTube playlist fetch failed: $e');
+    
+    if (widget.playlist.id == 'LM' || widget.playlist.id == 'VLLM') {
+      songs = account.likedSongs;
+    } else {
+      try {
+        songs = await YoutubeAccountService().fetchPlaylistSongs(
+          headers,
+          widget.playlist.id,
+          album: widget.playlist.title,
+        );
+      } catch (e) {
+        debugPrint('InnerTube playlist fetch failed: $e');
+      }
     }
     
     // Fallback to Data API / Scraper

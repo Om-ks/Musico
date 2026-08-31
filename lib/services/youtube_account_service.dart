@@ -334,8 +334,8 @@ class YoutubeAccountService {
                     if (playlistId == null && videoId == null) continue;
                     
                     final titleText = twoRow['title']?['runs']?[0]?['text']?.toString() ?? 'Unknown';
-                    // Only take the first run for subtitle to avoid view counts
-                    final subtitleText = (twoRow['subtitle']?['runs'] as List?)?.firstWhere((r) => r['text'] != null, orElse: () => {})['text']?.toString() ?? '';
+                    final rawSubtitle = (twoRow['subtitle']?['runs'] as List?)?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+                    final parsedInfo = _parseSubtitleAndCount(rawSubtitle);
                     
                     final thumbnails = twoRow['thumbnailRenderer']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
                     final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
@@ -344,7 +344,7 @@ class YoutubeAccountService {
                       songs.add(Song(
                         id: videoId,
                         title: titleText,
-                        artist: subtitleText,
+                        artist: parsedInfo.subtitle,
                         album: 'YouTube Music',
                         thumbnailUrl: thumb,
                         duration: 0,
@@ -355,9 +355,9 @@ class YoutubeAccountService {
                       playlists.add(MusicPlaylist(
                         id: finalId,
                         title: titleText,
-                        owner: subtitleText,
+                        owner: parsedInfo.subtitle,
                         thumbnailUrl: thumb,
-                        itemCount: 0,
+                        itemCount: parsedInfo.count,
                         source: 'youtube'
                       ));
                     }
@@ -479,7 +479,7 @@ class YoutubeAccountService {
           },
         );
         
-        await Future.delayed(const Duration(milliseconds: 500)); // Prevent rate limiting
+        await Future.delayed(const Duration(milliseconds: 1500)); // Prevent rate limiting
         
         response = await http
             .post(

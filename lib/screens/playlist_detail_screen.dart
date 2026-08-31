@@ -66,7 +66,7 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
     final headers = await account.getAuthHeaders() ?? <String, String>{};
     
     if (widget.playlist.id == 'LM' || widget.playlist.id == 'VLLM') {
-      songs = account.likedSongs;
+      songs = account.library.likedSongs;
     } else {
       try {
         songs = await YoutubeAccountService().fetchPlaylistSongs(

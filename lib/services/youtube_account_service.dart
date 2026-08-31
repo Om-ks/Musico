@@ -308,8 +308,8 @@ class YoutubeAccountService {
                 final carousel = section['musicCarouselShelfRenderer'] ?? section['musicImmersiveCarouselShelfRenderer'] ?? section['musicShelfRenderer'];
                 if (carousel == null) continue;
                 
-                final titleObj = carousel['header']?['musicCarouselShelfBasicHeaderRenderer']?['title']?['runs']?[0] ?? carousel['header']?['musicCarouselShelfBasicHeaderRenderer']?['title'];
-                final title = titleObj?['text']?.toString() ?? 'Recommended';
+                final titleRuns = carousel['header']?['musicCarouselShelfBasicHeaderRenderer']?['title']?['runs'] as List?;
+                final title = titleRuns?.map((r) => r['text']?.toString() ?? '').join('') ?? 'Recommended';
                 
                 final items = carousel['contents'] as List?;
                 if (items == null || items.isEmpty) continue;
@@ -523,6 +523,7 @@ class YoutubeAccountService {
     } catch (e) {
       debugPrint('YT _fetchMusicBrowse error for $browseId: $e');
     }
+    return allSongs;
   }
 
   String? _extractContinuationToken(dynamic data, {bool isPlaylist = false}) {

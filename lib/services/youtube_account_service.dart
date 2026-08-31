@@ -219,17 +219,7 @@ class YoutubeAccountService {
                 final thumbnails = twoRow['thumbnailRenderer']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
                 final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
                 
-                if (playlistId != null && playlistId.isNotEmpty) {
-                  String finalId = playlistId.startsWith('VL') ? playlistId.substring(2) : playlistId;
-                  playlists.add(MusicPlaylist(
-                    id: finalId,
-                    title: titleText,
-                    owner: parsedInfo.subtitle,
-                    thumbnailUrl: thumb,
-                    itemCount: parsedInfo.count,
-                    source: 'youtube'
-                  ));
-                } else if (videoId != null && videoId.isNotEmpty) {
+                if (videoId != null && videoId.isNotEmpty && browseEndpoint == null) {
                   songs.add(Song(
                     id: videoId,
                     title: titleText,
@@ -237,6 +227,16 @@ class YoutubeAccountService {
                     album: 'YouTube Music',
                     thumbnailUrl: thumb,
                     duration: 0,
+                    source: 'youtube'
+                  ));
+                } else if (playlistId != null && playlistId.isNotEmpty) {
+                  String finalId = playlistId.startsWith('VL') ? playlistId.substring(2) : playlistId;
+                  playlists.add(MusicPlaylist(
+                    id: finalId,
+                    title: titleText,
+                    owner: parsedInfo.subtitle,
+                    thumbnailUrl: thumb,
+                    itemCount: parsedInfo.count,
                     source: 'youtube'
                   ));
                 }
@@ -340,17 +340,7 @@ class YoutubeAccountService {
                     final thumbnails = twoRow['thumbnailRenderer']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
                     final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
                     
-                    if (playlistId != null && playlistId.isNotEmpty) {
-                      String finalId = playlistId.startsWith('VL') ? playlistId.substring(2) : playlistId;
-                      playlists.add(MusicPlaylist(
-                        id: finalId,
-                        title: titleText,
-                        owner: subtitleText,
-                        thumbnailUrl: thumb,
-                        itemCount: 0,
-                        source: 'youtube'
-                      ));
-                    } else if (videoId != null && videoId.isNotEmpty) {
+                    if (videoId != null && videoId.isNotEmpty && browseEndpoint == null) {
                       songs.add(Song(
                         id: videoId,
                         title: titleText,
@@ -358,6 +348,16 @@ class YoutubeAccountService {
                         album: 'YouTube Music',
                         thumbnailUrl: thumb,
                         duration: 0,
+                        source: 'youtube'
+                      ));
+                    } else if (playlistId != null && playlistId.isNotEmpty) {
+                      String finalId = playlistId.startsWith('VL') ? playlistId.substring(2) : playlistId;
+                      playlists.add(MusicPlaylist(
+                        id: finalId,
+                        title: titleText,
+                        owner: subtitleText,
+                        thumbnailUrl: thumb,
+                        itemCount: 0,
                         source: 'youtube'
                       ));
                     }
@@ -478,6 +478,9 @@ class YoutubeAccountService {
             'prettyPrint': 'false',
           },
         );
+        
+        await Future.delayed(const Duration(milliseconds: 500)); // Prevent rate limiting
+        
         response = await http
             .post(
               contUri,

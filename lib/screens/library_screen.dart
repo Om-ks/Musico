@@ -279,7 +279,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                 ...ytPlaylists.map((playlist) {
                   return _playlistCard(
                     title: playlist.title,
-                    subtitle: '${playlist.itemCount} songs • YouTube',
+                    subtitle: playlist.itemCount > 0 ? '${playlist.itemCount} songs' : 'YouTube Playlist',
                     isYoutube: true,
                     onRename: () => _renamePlaylistDialog(playlist.title, true, playlist.id),
                     onDelete: () async {

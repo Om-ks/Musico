@@ -362,22 +362,29 @@ class YoutubeAccountService {
                       ));
                     }
                   } else if (responsive != null) {
-                    final flexColumns = responsive['flexColumns'] as List?;
-                    if (flexColumns == null || flexColumns.isEmpty) continue;
-                    
-                    final titleText = flexColumns[0]?['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs']?[0]?['text']?.toString() ?? 'Unknown';
-                    final subtitleText = (flexColumns.length > 1) 
-                        ? ((flexColumns[1]?['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs'] as List?)?.firstWhere((r) => r['text'] != null, orElse: () => {})['text']?.toString() ?? '')
-                        : '';
-                    
-                    final thumbnails = responsive['thumbnail']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
-                    final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
-                    
-                    final videoId = responsive['overlay']?['musicItemThumbnailOverlayRenderer']?['content']?['musicPlayButtonRenderer']?['playNavigationEndpoint']?['watchEndpoint']?['videoId']?.toString();
-                    if (videoId == null || videoId.isEmpty) continue;
-                    
-                    songs.add(Song(id: videoId, title: titleText, artist: subtitleText, album: 'YouTube Music', thumbnailUrl: thumb, duration: 0, source: 'youtube'));
-                  }
+                      final flexColumns = responsive['flexColumns'] as List?;
+                      if (flexColumns == null || flexColumns.isEmpty) continue;
+                      
+                      final titleRuns = (flexColumns[0]?['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs'] as List?);
+                      final titleText = titleRuns?[0]?['text']?.toString() ?? 'Unknown';
+                      
+                      final subtitleRuns = (flexColumns.length > 1) 
+                          ? (flexColumns[1]?['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs'] as List?)
+                          : null;
+                      final rawSubtitle = subtitleRuns?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+                      final parsedInfo = _parseSubtitleAndCount(rawSubtitle);
+                      
+                      final thumbnails = responsive['thumbnail']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
+                      final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
+                      
+                      final overlay = responsive['overlay']?['musicItemThumbnailOverlayRenderer']?['content']?['musicPlayButtonRenderer'];
+                      final watchEndpoint = overlay?['playNavigationEndpoint']?['watchEndpoint'];
+                      
+                      final videoId = watchEndpoint?['videoId']?.toString();
+                      if (videoId == null || videoId.isEmpty) continue;
+                      
+                      songs.add(Song(id: videoId, title: titleText, artist: parsedInfo.subtitle, album: 'YouTube Music', thumbnailUrl: thumb, duration: 0, source: 'youtube'));
+                    }
                 }
                 if (songs.isNotEmpty || playlists.isNotEmpty) {
                    sections.add(MusicRecommendationSection(title: title, songs: songs, playlists: playlists));
@@ -516,25 +523,13 @@ class YoutubeAccountService {
     } catch (e) {
       debugPrint('YT _fetchMusicBrowse error for $browseId: $e');
     }
-    return allSongs;
   }
-
 
   String? _extractContinuationToken(dynamic data, {bool isPlaylist = false}) {
     String? token;
     void find(dynamic node) {
       if (token != null || node == null) return;
       if (node is Map) {
-        // Skip autoplay/related continuations that cause infinite loops of unrelated songs
-        if (node.containsKey('musicBottomActionRenderer') || 
-            node.containsKey('automixPreviewVideoRenderer') ||
-            node.containsKey('chipCloudRenderer') ||
-            node.containsKey('chipCloudChipRenderer')) return;
-        
-        // Also skip generic itemSectionRenderer if we're parsing a playlist 
-        // to prevent grabbing the "Suggested" songs token
-        if (isPlaylist && node.containsKey('itemSectionRenderer')) return;
-
         final t = node['continuationCommand']?['token'] ?? 
                   node['nextContinuationData']?['continuation'] ??
                   node['reloadContinuationData']?['continuation'];
@@ -543,7 +538,21 @@ class YoutubeAccountService {
           token = t;
           return;
         }
-        node.values.forEach(find);
+        
+        for (final entry in node.entries) {
+          final key = entry.key.toString();
+          // Skip these entire subtrees
+          if (key == 'musicBottomActionRenderer' || 
+              key == 'automixPreviewVideoRenderer' ||
+              key == 'chipCloudRenderer' ||
+              key == 'chipCloudChipRenderer') {
+            continue;
+          }
+          if (isPlaylist && key == 'itemSectionRenderer') {
+            continue;
+          }
+          find(entry.value);
+        }
       } else if (node is List) {
         node.forEach(find);
       }

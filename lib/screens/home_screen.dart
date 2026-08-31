@@ -22,17 +22,15 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _storage = StorageService();
   HomeFeedData? _feedData;
-  // Only true on the very first load so we show the spinner once.
-  // On pull-to-refresh we keep existing content visible.
+  int _fetchId = 0;
   bool _loading = true;
-  bool _isFetching = false;
   String? _lastAuthState;
   String? _selectedChipText;
 
   @override
   void initState() {
     super.initState();
-    SchedulerBinding.instance.addPostFrameCallback((_) => _fetchFeed(firstLoad: true));
+    // No need to fetch here, _onAuthChanged will handle the initial fetch
   }
 
   /// Called once after sign-in state changes (NOT on every library update).
@@ -46,25 +44,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _fetchFeed({bool firstLoad = false, String? token}) async {
-    if (_isFetching) return; // prevent overlapping calls
-    _isFetching = true;
+    _fetchId++;
+    final currentId = _fetchId;
     if (mounted && firstLoad) setState(() => _loading = true);
 
     try {
       final account = context.read<AccountProvider>();
-      if (account.youtubeAuthorized) {
-        final data = await account.fetchHomeFeed(continuationToken: token);
-        if (mounted) setState(() => _feedData = data);
-      } else {
-        final history = await _storage.getListeningHistory();
-        final data = await ApiService.getRecommendedSections(history);
-        if (mounted) setState(() => _feedData = data);
-      }
+      final data = account.youtubeAuthorized 
+          ? await account.fetchHomeFeed(continuationToken: token)
+          : await ApiService.getRecommendedSections(await _storage.getListeningHistory());
+          
+      if (_fetchId != currentId) return; // A newer fetch started
+      if (mounted) setState(() => _feedData = data);
     } catch (_) {
       // Silently swallow — library sections stay visible
     } finally {
-      _isFetching = false;
-      if (mounted) setState(() => _loading = false);
+      if (_fetchId == currentId && mounted) setState(() => _loading = false);
     }
   }
 

@@ -39,9 +39,9 @@ class YoutubeAccountService {
     if (match != null) {
       count = int.tryParse(match.group(1)!) ?? 0;
     }
-    String clean = raw.replaceAll(RegExp(r'^Playlist\s*•\s*'), '').trim();
-    clean = clean.replaceAll(RegExp(r'\s*•\s*[\d,.]+[KMBkmb]?\s+(?:views?|plays?)'), '').trim();
-    // Also remove year or extra bullets if it ends with them, or just let it be.
+    String clean = raw.replaceAll(RegExp(r'^(?:Playlist|Album|EP|Single)\s*•\s*'), '').trim();
+    clean = clean.replaceAll(RegExp(r'\s*•\s*[\d,.]+[KMBkmb]?\s+(?:views?|plays?|songs?)'), '').trim();
+    clean = clean.replaceAll(RegExp(r'\s*•\s*\d{4}$'), '').trim();
     return (subtitle: clean, count: count);
   }
 
@@ -531,6 +531,18 @@ class YoutubeAccountService {
     void find(dynamic node) {
       if (token != null || node == null) return;
       if (node is Map) {
+        // Skip these subtrees completely to avoid looping chips or autoplay tokens
+        if (node.containsKey('musicBottomActionRenderer') ||
+            node.containsKey('automixPreviewVideoRenderer') ||
+            node.containsKey('chipCloudRenderer') ||
+            node.containsKey('chipCloudChipRenderer')) {
+          return;
+        }
+        
+        if (isPlaylist && node.containsKey('itemSectionRenderer')) {
+          return;
+        }
+
         final t = node['continuationCommand']?['token'] ?? 
                   node['nextContinuationData']?['continuation'] ??
                   node['reloadContinuationData']?['continuation'];
@@ -540,25 +552,12 @@ class YoutubeAccountService {
           return;
         }
         
-        for (final entry in node.entries) {
-          final key = entry.key.toString();
-          // Skip these entire subtrees
-          if (key == 'musicBottomActionRenderer' || 
-              key == 'automixPreviewVideoRenderer' ||
-              key == 'chipCloudRenderer' ||
-              key == 'chipCloudChipRenderer') {
-            continue;
-          }
-          if (isPlaylist && key == 'itemSectionRenderer') {
-            continue;
-          }
-          find(entry.value);
-        }
+        node.values.forEach(find);
       } else if (node is List) {
         node.forEach(find);
       }
     }
-    
+
     // For playlists, try to restrict to the playlist shelf first to avoid grabbing related/mix tokens
     try {
       final shelf = data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['sectionListRenderer']?['contents']?[0]?['musicPlaylistShelfRenderer'] ??

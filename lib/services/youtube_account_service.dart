@@ -1424,23 +1424,30 @@ class YoutubeAccountService {
   Future<String?> createPlaylist(
       Map<String, String> headers, String title) async {
     try {
+      final requestHeaders = _buildInnerTubeHeaders(headers);
+      final body = {
+        'context': {
+          'client': {
+            'clientName': 'WEB_REMIX',
+            'clientVersion': '1.20240610.01.00',
+          }
+        },
+        'title': title,
+        'description': '',
+        'privacyStatus': 'PRIVATE'
+      };
+
       final response = await http
           .post(
-            Uri.parse('${_base}playlists?part=snippet,status'),
-            headers: {
-              ...headers,
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'snippet': {'title': title},
-              'status': {'privacyStatus': 'private'},
-            }),
+            Uri.parse('https://music.youtube.com/youtubei/v1/playlist/create?key=AIzaSyC1nBR9Gs1m4Hnbp6Ur0qa9Ta1IO9oPras&prettyPrint=false'),
+            headers: requestHeaders,
+            body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 15));
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['id'];
+        return data['playlistId'];
       }
     } catch (e) {
       debugPrint('YouTube createPlaylist failed: $e');
@@ -1450,16 +1457,28 @@ class YoutubeAccountService {
 
   Future<bool> deletePlaylist(Map<String, String> headers, String playlistId) async {
     try {
-      final response = await http.delete(
-        Uri.parse('${_base}playlists?id=$playlistId'),
-        headers: headers,
+      final requestHeaders = _buildInnerTubeHeaders(headers);
+      final body = {
+        'context': {
+          'client': {
+            'clientName': 'WEB_REMIX',
+            'clientVersion': '1.20240610.01.00',
+          }
+        },
+        'playlistId': playlistId.startsWith('VL') ? playlistId.substring(2) : playlistId,
+      };
+
+      final response = await http.post(
+        Uri.parse('https://music.youtube.com/youtubei/v1/playlist/delete?key=AIzaSyC1nBR9Gs1m4Hnbp6Ur0qa9Ta1IO9oPras&prettyPrint=false'),
+        headers: requestHeaders,
+        body: jsonEncode(body),
       );
-      if (response.statusCode == 204 || response.statusCode == 200) {
-        return true;
-      } else {
-        debugPrint('YouTube deletePlaylist err: ${response.statusCode} ${response.body}');
-        return false;
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['status'] == 'STATUS_SUCCEEDED';
       }
+      return false;
     } catch (e) {
       debugPrint('YouTube deletePlaylist failed: $e');
       return false;
@@ -1468,18 +1487,33 @@ class YoutubeAccountService {
 
   Future<bool> editPlaylist(Map<String, String> headers, String id, String newTitle) async {
     try {
-      final response = await http.put(
-        Uri.parse('${_base}playlists?part=snippet'),
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
+      final requestHeaders = _buildInnerTubeHeaders(headers);
+      final body = {
+        'context': {
+          'client': {
+            'clientName': 'WEB_REMIX',
+            'clientVersion': '1.20240610.01.00',
+          }
         },
-        body: jsonEncode({
-          'id': id,
-          'snippet': {'title': newTitle},
-        }),
+        'playlistId': id.startsWith('VL') ? id.substring(2) : id,
+        'actions': [
+          {
+            'action': 'ACTION_SET_PLAYLIST_NAME',
+            'playlistName': newTitle
+          }
+        ]
+      };
+
+      final response = await http.post(
+        Uri.parse('https://music.youtube.com/youtubei/v1/browse/edit_playlist?key=AIzaSyC1nBR9Gs1m4Hnbp6Ur0qa9Ta1IO9oPras&prettyPrint=false'),
+        headers: requestHeaders,
+        body: jsonEncode(body),
       );
-      return response.statusCode == 200 || response.statusCode == 204;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['status'] == 'STATUS_SUCCEEDED';
+      }
+      return false;
     } catch (e) {
       debugPrint('YouTube editPlaylist failed: $e');
       return false;
@@ -1492,25 +1526,33 @@ class YoutubeAccountService {
     String videoId,
   ) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse('${_base}playlistItems?part=snippet'),
-            headers: {
-              ...headers,
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'snippet': {
-                'playlistId': playlistId,
-                'resourceId': {
-                  'kind': 'youtube#video',
-                  'videoId': videoId,
-                }
-              },
-            }),
-          )
-          .timeout(const Duration(seconds: 15));
-      return response.statusCode == 200 || response.statusCode == 201;
+      final requestHeaders = _buildInnerTubeHeaders(headers);
+      final body = {
+        'context': {
+          'client': {
+            'clientName': 'WEB_REMIX',
+            'clientVersion': '1.20240610.01.00',
+          }
+        },
+        'playlistId': playlistId.startsWith('VL') ? playlistId.substring(2) : playlistId,
+        'actions': [
+          {
+            'action': 'ACTION_ADD_VIDEO',
+            'addedVideoId': videoId
+          }
+        ]
+      };
+
+      final response = await http.post(
+        Uri.parse('https://music.youtube.com/youtubei/v1/browse/edit_playlist?key=AIzaSyC1nBR9Gs1m4Hnbp6Ur0qa9Ta1IO9oPras&prettyPrint=false'),
+        headers: requestHeaders,
+        body: jsonEncode(body),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['status'] == 'STATUS_SUCCEEDED';
+      }
+      return false;
     } catch (e) {
       debugPrint('YouTube addSongToPlaylist failed: $e');
       return false;
@@ -1523,31 +1565,71 @@ class YoutubeAccountService {
     String videoId,
   ) async {
     try {
-      // First, find the playlistItemId for this videoId in this playlist
-      final items = await _fetchPagedItems(
-        headers,
-        'playlistItems',
-        {
-          'part': 'id,contentDetails',
-          'playlistId': playlistId,
-          'maxResults': '50',
+      final requestHeaders = _buildInnerTubeHeaders(headers);
+      final browseBody = {
+        'context': {
+          'client': {
+            'clientName': 'WEB_REMIX',
+            'clientVersion': '1.20240610.01.00',
+          }
         },
-        maxPages: 100,
+        'browseId': playlistId.startsWith('VL') ? playlistId : 'VL$playlistId',
+      };
+      
+      final browseResponse = await http.post(
+        Uri.parse('https://music.youtube.com/youtubei/v1/browse?key=AIzaSyC1nBR9Gs1m4Hnbp6Ur0qa9Ta1IO9oPras&prettyPrint=false'),
+        headers: requestHeaders,
+        body: jsonEncode(browseBody),
       );
-
-      final item = items.firstWhere(
-        (it) => it['contentDetails']?['videoId'] == videoId,
-        orElse: () => null,
-      );
-
-      if (item != null) {
-        final itemId = item['id'];
-        final response = await http.delete(
-          Uri.parse('${_base}playlistItems?id=$itemId'),
-          headers: headers,
-        );
-        return response.statusCode == 200 || response.statusCode == 204;
+      
+      String? setVideoId;
+      if (browseResponse.statusCode == 200) {
+        final data = jsonDecode(browseResponse.body);
+        void findSetVideoId(dynamic node) {
+          if (setVideoId != null || node == null) return;
+          if (node is Map) {
+            if (node['videoId'] == videoId && node.containsKey('setVideoId')) {
+              setVideoId = node['setVideoId'];
+              return;
+            }
+            node.values.forEach(findSetVideoId);
+          } else if (node is List) {
+            node.forEach(findSetVideoId);
+          }
+        }
+        findSetVideoId(data);
       }
+      
+      final action = {
+        'action': 'ACTION_REMOVE_VIDEO',
+        'removedVideoId': videoId,
+      };
+      if (setVideoId != null) {
+        action['setVideoId'] = setVideoId!;
+      }
+
+      final editBody = {
+        'context': {
+          'client': {
+            'clientName': 'WEB_REMIX',
+            'clientVersion': '1.20240610.01.00',
+          }
+        },
+        'playlistId': playlistId.startsWith('VL') ? playlistId.substring(2) : playlistId,
+        'actions': [action]
+      };
+
+      final response = await http.post(
+        Uri.parse('https://music.youtube.com/youtubei/v1/browse/edit_playlist?key=AIzaSyC1nBR9Gs1m4Hnbp6Ur0qa9Ta1IO9oPras&prettyPrint=false'),
+        headers: requestHeaders,
+        body: jsonEncode(editBody),
+      );
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['status'] == 'STATUS_SUCCEEDED';
+      }
+      return false;
     } catch (e) {
       debugPrint('YouTube removeSongFromPlaylist failed: $e');
     }
@@ -1719,3 +1801,4 @@ class YoutubeAccountException implements Exception {
   @override
   String toString() => message;
 }
+

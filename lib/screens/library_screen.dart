@@ -419,7 +419,7 @@ class _LibraryScreenState extends State<LibraryScreen>
               }
               if (mounted) Navigator.pop(context);
             },
-            child: const Text('Rename'),
+            child: const Text('Rename', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),

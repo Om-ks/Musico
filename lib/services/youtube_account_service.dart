@@ -561,8 +561,10 @@ class YoutubeAccountService {
     // For playlists, try to restrict to the playlist shelf first to avoid grabbing related/mix tokens
     try {
       final shelf = data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['sectionListRenderer']?['contents']?[0]?['musicPlaylistShelfRenderer'] ??
+                    data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['sectionListRenderer']?['contents']?[0]?['musicShelfRenderer'] ??
                     data['contents']?['twoColumnBrowseResultsRenderer']?['secondaryContents']?['sectionListRenderer']?['contents']?[0]?['musicPlaylistShelfRenderer'] ??
-                    data['continuationContents']?['musicPlaylistShelfContinuation'];
+                    data['continuationContents']?['musicPlaylistShelfContinuation'] ??
+                    data['continuationContents']?['musicShelfContinuation'];
       if (shelf != null) {
         find(shelf['continuations']);
         if (token != null) return token;

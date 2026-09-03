@@ -14,11 +14,13 @@ class MusicRecommendationSection {
   final String title;
   final List<Song> songs;
   final List<MusicPlaylist> playlists;
+  final List<dynamic> items;
 
   const MusicRecommendationSection({
     required this.title,
     required this.songs,
     required this.playlists,
+    this.items = const [],
   });
 }
 
@@ -100,13 +102,17 @@ class ApiService {
           searchPlaylists(seed.query, limit: 6),
         ]);
 
+        final outSongs = (results[0] as List<Song>)
+            .where(
+                (song) => !listenedKeys.contains('${song.source}:${song.id}'))
+            .toList();
+        final outPlaylists = results[1] as List<MusicPlaylist>;
+            
         return MusicRecommendationSection(
           title: seed.title,
-          songs: (results[0] as List<Song>)
-              .where(
-                  (song) => !listenedKeys.contains('${song.source}:${song.id}'))
-              .toList(),
-          playlists: results[1] as List<MusicPlaylist>,
+          songs: outSongs,
+          playlists: outPlaylists,
+          items: [...outSongs, ...outPlaylists],
         );
       }),
     );

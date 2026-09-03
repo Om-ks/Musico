@@ -101,26 +101,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: _buildChips(_feedData!.chips),
               ),
 
-            if (_feedData != null)
-              for (final section in _feedData!.sections) ...[
-                SliverToBoxAdapter(
-                  child: _buildSectionLabel(section.title),
-                ),
-                // Show playlist cards (albums, mixes, radios) — always preferred
-                if (section.playlists.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: _buildPlaylistCards(section.playlists),
-                  ),
-                // Show song rows only when there are no playlist cards (e.g. Quick Picks)
-                if (section.songs.isNotEmpty && section.playlists.isEmpty)
-                  SliverToBoxAdapter(
-                    child: section.songs.length > 8
-                        ? _buildGridCards(section.songs)
-                        : _buildHorizontalCards(section.songs),
-                  ),
-              ],
+              if (_feedData != null)
+                for (final section in _feedData!.sections) ...[
+                  if (section.items.isNotEmpty) ...[
+                    SliverToBoxAdapter(
+                      child: _buildSectionLabel(section.title),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _buildDynamicSection(section),
+                    ),
+                  ],
+                ],
 
-            const SliverToBoxAdapter(child: SizedBox(height: 160)),
+              const SliverToBoxAdapter(child: SizedBox(height: 160)),
           ],
         ],
       ),
@@ -214,35 +207,162 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildGridCards(List<Song> songs) {
+  Widget _buildDynamicSection(MusicRecommendationSection section) {
+    final title = section.title.toLowerCase();
+    
+    // 1. Explicitly large square cards
+    if (title.contains('similar to') || title.contains('fresh finds') || title.contains('albums') || title.contains('new releases') || title.contains('discover')) {
+      return _buildPlaylistCards(section.items);
+    }
+    // 2. Square Grids (Speed Dial)
+    else if (title.contains('speed dial') || title.contains('mixed for you')) {
+      return _buildSquareGridCards(section.items);
+    } 
+    // 3. Dense List Grids (Songs)
+    else if (title.contains('quick picks') || title.contains('trending') || title.contains('remixes') || title.contains('listen again')) {
+      return _buildGridCards(section.items, rows: 4);
+    }
+    
+    // 4. Default fallbacks
+    if (section.songs.length == section.items.length && section.items.isNotEmpty) {
+      return _buildGridCards(section.items, rows: 4);
+    }
+    return _buildPlaylistCards(section.items);
+  }
+
+  Widget _buildSquareGridCards(List<dynamic> items) {
     return SizedBox(
-      height: 240, // 4 rows of 60
+      height: 240, // 2 rows of ~110
       child: GridView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 4,
+          crossAxisCount: 2, // 2 rows
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.1, // slightly taller than wide to fit text
+        ),
+        itemCount: items.length,
+        itemBuilder: (ctx, i) {
+          final item = items[i];
+          String title = '';
+          String subtitle = '';
+          String thumb = '';
+          if (item is Song) {
+            title = item.title;
+            subtitle = item.artist;
+            thumb = item.thumbnailUrl;
+          } else if (item is MusicPlaylist) {
+            title = item.title;
+            subtitle = item.owner;
+            thumb = item.thumbnailUrl;
+          }
+          return GestureDetector(
+            onTap: () {
+              if (item is Song) {
+                final allSongs = items.whereType<Song>().toList();
+                context.read<PlayerProvider>().playSong(item, playlist: allSongs.isNotEmpty ? allSongs : [item]);
+              } else if (item is MusicPlaylist) {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => RemotePlaylistScreen(playlist: item)));
+              }
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: thumb.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: thumb,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => _playlistDefaultArt(),
+                            errorWidget: (_, __, ___) => _playlistDefaultArt(),
+                          )
+                        : _playlistDefaultArt(),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildGridCards(List<dynamic> items, {int rows = 4}) {
+    final double itemHeight = 60.0;
+    return SizedBox(
+      height: rows * itemHeight,
+      child: GridView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: rows,
           mainAxisSpacing: 12,
           crossAxisSpacing: 8,
-          childAspectRatio: 60 / 300, // height / width roughly
+          childAspectRatio: 60 / 300,
         ),
-        itemCount: songs.length,
+        itemCount: items.length,
         itemBuilder: (ctx, i) {
-          final song = songs[i];
+          final item = items[i];
+          
+          String title = '';
+          String subtitle = '';
+          String thumb = '';
+          
+          if (item is Song) {
+            title = item.title;
+            subtitle = item.artist;
+            thumb = item.thumbnailUrl;
+          } else if (item is MusicPlaylist) {
+            title = item.title;
+            subtitle = item.owner;
+            thumb = item.thumbnailUrl;
+          }
+          
           return GestureDetector(
-            onTap: () => context.read<PlayerProvider>().playSong(song, playlist: songs),
+            onTap: () {
+              if (item is Song) {
+                final allSongs = items.whereType<Song>().toList();
+                context.read<PlayerProvider>().playSong(item, playlist: allSongs);
+              } else if (item is MusicPlaylist) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => RemotePlaylistScreen(playlist: item),
+                  ),
+                );
+              }
+            },
             child: Row(
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
-                  child: CachedNetworkImage(
-                    imageUrl: song.thumbnailUrl,
-                    width: 48,
-                    height: 48,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: const Color(0xFF1A1A2E)),
-                    errorWidget: (_, __, ___) => _defaultArt(),
-                  ),
+                  child: thumb.isNotEmpty 
+                      ? CachedNetworkImage(
+                          imageUrl: thumb,
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: const Color(0xFF1A1A2E)),
+                          errorWidget: (_, __, ___) => _defaultArt(),
+                        )
+                      : _defaultArt(),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -251,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        song.title,
+                        title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -262,17 +382,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        song.artist,
+                        subtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: Colors.white.withOpacity(0.6),
                           fontSize: 12,
                         ),
                       ),
                     ],
                   ),
                 ),
+
               ],
             ),
           );
@@ -281,136 +402,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildHorizontalCards(List<Song> songs, {bool isRecents = false}) {
-    return SizedBox(
-      height: 210,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: songs.length,
-        itemBuilder: (ctx, i) {
-          final song = songs[i];
-          return GestureDetector(
-            onTap: () =>
-                context.read<PlayerProvider>().playSong(song, playlist: songs),
-            onLongPress: isRecents
-                ? () => _showRemoveFromRecentsDialog(context, song)
-                : null,
-            child: Container(
-              width: 148,
-              margin: const EdgeInsets.symmetric(horizontal: 6),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                color: const Color(0xFF141420),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ClipRRect(
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(8)),
-                    child: Stack(
-                      children: [
-                        song.thumbnailUrl.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: song.thumbnailUrl,
-                                width: 148,
-                                height: 140,
-                                fit: BoxFit.cover,
-                                placeholder: (_, __) => Container(
-                                    height: 140, color: const Color(0xFF1A1A2E)),
-                                errorWidget: (_, __, ___) =>
-                                    SizedBox(height: 140, child: _defaultArt()),
-                              )
-                            : SizedBox(height: 140, child: _defaultArt()),
-                        if (isRecents)
-                          Positioned(
-                            top: 4,
-                            right: 4,
-                            child: GestureDetector(
-                              onTap: () => _showRemoveFromRecentsDialog(context, song),
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: Colors.black54,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(Icons.close_rounded,
-                                    color: Colors.white, size: 16),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
-                    child: Text(song.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600)),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 2, 8, 0),
-                    child: Text(song.artist,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
-                            fontSize: 11)),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
 
-  void _showRemoveFromRecentsDialog(BuildContext context, Song song) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('Remove from Recents?', style: TextStyle(color: Colors.white)),
-        content: Text('Do you want to remove "${song.title}" from your recently played list?',
-            style: const TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
-          ),
-          TextButton(
-            onPressed: () {
-              context.read<PlayerProvider>().removeFromRecentlyPlayed(song);
-              Navigator.pop(ctx);
-              _fetchFeed(); // Refresh
-            },
-            child: const Text('Remove', style: TextStyle(color: Color(0xFFB06EF3))),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlaylistCards(List<MusicPlaylist> playlists) {
+Widget _buildPlaylistCards(List<dynamic> items) {
     return SizedBox(
       height: 178,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: playlists.length,
+        itemCount: items.length,
         itemBuilder: (ctx, i) {
-          final playlist = playlists[i];
+            final item = items[i];
+          String title = ''; String owner = ''; String thumb = '';
+          if (item is Song) { title = item.title; owner = item.artist; thumb = item.thumbnailUrl; } 
+          else if (item is MusicPlaylist) { title = item.title; owner = item.owner; thumb = item.thumbnailUrl; }
           return GestureDetector(
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => RemotePlaylistScreen(playlist: playlist),
+                builder: (_) => RemotePlaylistScreen(playlist: item is MusicPlaylist ? item : const MusicPlaylist(id: '', title: '', owner: '', thumbnailUrl: '', itemCount: 0, source: 'youtube')),
               ),
             ),
             child: Container(
@@ -421,9 +430,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: playlist.thumbnailUrl.isNotEmpty
+                    child: thumb.isNotEmpty
                         ? CachedNetworkImage(
-                            imageUrl: playlist.thumbnailUrl,
+                            imageUrl: thumb,
                             width: 148,
                             height: 118,
                             fit: BoxFit.cover,
@@ -434,7 +443,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    playlist.title,
+                    title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -444,7 +453,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   Text(
-                    playlist.owner,
+                    owner,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

@@ -122,7 +122,7 @@ class YoutubeAccountService {
     }
   }
 
-  Future<HomeFeedData> fetchHomeFeed(Map<String, String> headers, {String? continuationToken}) async {
+  Future<HomeFeedData> fetchHomeFeed(Map<String, String> headers, {String? params}) async {
     final sections = <MusicRecommendationSection>[];
     final chips = <HomeFeedChip>[];
     try {
@@ -148,10 +148,9 @@ class YoutubeAccountService {
         },
       };
       
-      if (continuationToken != null) {
-        body['continuation'] = continuationToken;
-      } else {
-        body['browseId'] = 'FEmusic_home';
+      body['browseId'] = 'FEmusic_home';
+      if (params != null) {
+        body['params'] = params;
       }
 
       final response = await http.post(
@@ -173,9 +172,9 @@ class YoutubeAccountService {
             for (final chip in headerChips) {
               final renderer = chip['chipCloudChipRenderer'];
               final text = renderer?['text']?['runs']?[0]?['text']?.toString();
-              final token = renderer?['navigationEndpoint']?['continuationCommand']?['token']?.toString();
+              final chipParams = renderer?['navigationEndpoint']?['browseEndpoint']?['params']?.toString();
               if (text != null && text.isNotEmpty) {
-                chips.add(HomeFeedChip(text: text, token: token));
+                chips.add(HomeFeedChip(text: text, token: chipParams));
               }
             }
           }
@@ -183,17 +182,31 @@ class YoutubeAccountService {
           final contents = sectionList['contents'] as List?;
           if (contents != null) {
             for (final section in contents) {
+            // Skip itemSectionRenderer (user library rows — causes "playlist name as title" bug)
+            if (section.containsKey('itemSectionRenderer')) continue;
+            
             final carousel = section['musicCarouselShelfRenderer'] ?? section['musicImmersiveCarouselShelfRenderer'] ?? section['musicShelfRenderer'];
             if (carousel == null) continue;
             
-            final titleRuns = carousel['header']?['musicCarouselShelfBasicHeaderRenderer']?['title']?['runs'] as List?;
-            final title = titleRuns?.map((r) => r['text']?.toString() ?? '').join('') ?? 'Recommended';
+            
+              final header = carousel['header']?['musicCarouselShelfBasicHeaderRenderer'];
+              final titleRuns = header?['title']?['runs'] as List?;
+              final straplineRuns = header?['strapline']?['runs'] as List?;
+              
+              String title = titleRuns?.map((r) => r['text']?.toString() ?? '').join('') ?? 'Recommended';
+              final strapline = straplineRuns?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+              
+              if (strapline.isNotEmpty) {
+                title = strapline + ' ' + title;
+              }
+
             
             final items = carousel['contents'] as List?;
             if (items == null || items.isEmpty) continue;
             
             final songs = <Song>[];
             final playlists = <MusicPlaylist>[];
+              final mixedItems = <dynamic>[];
             
             for (final item in items) {
               final twoRow = item['musicTwoRowItemRenderer'];
@@ -220,7 +233,7 @@ class YoutubeAccountService {
                 final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
                 
                 if (videoId != null && videoId.isNotEmpty && browseEndpoint == null) {
-                  songs.add(Song(
+                  final s = Song(
                     id: videoId,
                     title: titleText,
                     artist: parsedInfo.subtitle,
@@ -228,17 +241,21 @@ class YoutubeAccountService {
                     thumbnailUrl: thumb,
                     duration: 0,
                     source: 'youtube'
-                  ));
+                  );
+                    songs.add(s);
+                    mixedItems.add(s);
                 } else if (playlistId != null && playlistId.isNotEmpty) {
                   String finalId = playlistId.startsWith('VL') ? playlistId.substring(2) : playlistId;
-                  playlists.add(MusicPlaylist(
+                  final p = MusicPlaylist(
                     id: finalId,
                     title: titleText,
                     owner: parsedInfo.subtitle,
                     thumbnailUrl: thumb,
                     itemCount: parsedInfo.count,
                     source: 'youtube'
-                  ));
+                  );
+                    playlists.add(p);
+                    mixedItems.add(p);
                 }
               } else if (responsive != null) {
                 final flexColumns = responsive['flexColumns'] as List?;
@@ -262,7 +279,7 @@ class YoutubeAccountService {
                 final videoId = watchEndpoint?['videoId']?.toString();
                 if (videoId == null || videoId.isEmpty) continue;
                 
-                songs.add(Song(
+                final s = Song(
                   id: videoId,
                   title: titleText,
                   artist: parsedInfo.subtitle,
@@ -270,11 +287,13 @@ class YoutubeAccountService {
                   thumbnailUrl: thumb,
                   duration: 0,
                   source: 'youtube'
-                ));
+                );
+                    songs.add(s);
+                    mixedItems.add(s);
               }
             }
             if (songs.isNotEmpty || playlists.isNotEmpty) {
-               sections.add(MusicRecommendationSection(title: title, songs: songs, playlists: playlists));
+               sections.add(MusicRecommendationSection(title: title, songs: songs, playlists: playlists, items: mixedItems));
             }
           }
         }
@@ -305,17 +324,31 @@ class YoutubeAccountService {
             final nextContents = nextSectionList['contents'] as List?;
             if (nextContents != null) {
               for (final section in nextContents) {
+                // Skip itemSectionRenderer (user library rows — causes "playlist name as title" bug)
+                if (section.containsKey('itemSectionRenderer')) continue;
+                
                 final carousel = section['musicCarouselShelfRenderer'] ?? section['musicImmersiveCarouselShelfRenderer'] ?? section['musicShelfRenderer'];
                 if (carousel == null) continue;
                 
-                final titleRuns = carousel['header']?['musicCarouselShelfBasicHeaderRenderer']?['title']?['runs'] as List?;
-                final title = titleRuns?.map((r) => r['text']?.toString() ?? '').join('') ?? 'Recommended';
+                
+              final header = carousel['header']?['musicCarouselShelfBasicHeaderRenderer'];
+              final titleRuns = header?['title']?['runs'] as List?;
+              final straplineRuns = header?['strapline']?['runs'] as List?;
+              
+              String title = titleRuns?.map((r) => r['text']?.toString() ?? '').join('') ?? 'Recommended';
+              final strapline = straplineRuns?.map((r) => r['text']?.toString() ?? '').join('') ?? '';
+              
+              if (strapline.isNotEmpty) {
+                title = strapline + ' ' + title;
+              }
+
                 
                 final items = carousel['contents'] as List?;
                 if (items == null || items.isEmpty) continue;
                 
                 final songs = <Song>[];
                 final playlists = <MusicPlaylist>[];
+              final mixedItems = <dynamic>[];
                 
                 for (final item in items) {
                   final twoRow = item['musicTwoRowItemRenderer'];
@@ -341,7 +374,7 @@ class YoutubeAccountService {
                     final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
                     
                     if (videoId != null && videoId.isNotEmpty && browseEndpoint == null) {
-                      songs.add(Song(
+                      final s = Song(
                         id: videoId,
                         title: titleText,
                         artist: parsedInfo.subtitle,
@@ -349,17 +382,21 @@ class YoutubeAccountService {
                         thumbnailUrl: thumb,
                         duration: 0,
                         source: 'youtube'
-                      ));
+                      );
+                    songs.add(s);
+                    mixedItems.add(s);
                     } else if (playlistId != null && playlistId.isNotEmpty) {
                       String finalId = playlistId.startsWith('VL') ? playlistId.substring(2) : playlistId;
-                      playlists.add(MusicPlaylist(
+                      final p = MusicPlaylist(
                         id: finalId,
                         title: titleText,
                         owner: parsedInfo.subtitle,
                         thumbnailUrl: thumb,
                         itemCount: parsedInfo.count,
                         source: 'youtube'
-                      ));
+                      );
+                    playlists.add(p);
+                    mixedItems.add(p);
                     }
                   } else if (responsive != null) {
                       final flexColumns = responsive['flexColumns'] as List?;
@@ -383,11 +420,13 @@ class YoutubeAccountService {
                       final videoId = watchEndpoint?['videoId']?.toString();
                       if (videoId == null || videoId.isEmpty) continue;
                       
-                      songs.add(Song(id: videoId, title: titleText, artist: parsedInfo.subtitle, album: 'YouTube Music', thumbnailUrl: thumb, duration: 0, source: 'youtube'));
+                      final s = Song(id: videoId, title: titleText, artist: parsedInfo.subtitle, album: 'YouTube Music', thumbnailUrl: thumb, duration: 0, source: 'youtube');
+                    songs.add(s);
+                    mixedItems.add(s);
                     }
                 }
                 if (songs.isNotEmpty || playlists.isNotEmpty) {
-                   sections.add(MusicRecommendationSection(title: title, songs: songs, playlists: playlists));
+                   sections.add(MusicRecommendationSection(title: title, songs: songs, playlists: playlists, items: mixedItems));
                 }
               }
             }
@@ -456,7 +495,8 @@ class YoutubeAccountService {
           album: albumName,
           allowVideoFallback: allowVideoFallback,
         ));
-        continuationToken = _extractContinuationToken(data, isPlaylist: true);
+        final bool isLikedMusic = browseId == 'VLLM' || browseId == 'VLVLLM' || browseId == 'LM';
+        continuationToken = _extractContinuationToken(data, isPlaylist: !isLikedMusic);
         debugPrint(
             'YT Browse ($browseId): First page fetched ${allSongs.length} songs, continuation: ${continuationToken != null}');
       } else {
@@ -464,37 +504,32 @@ class YoutubeAccountService {
             'YT Browse ($browseId) failed with status: ${response.statusCode}, body: ${response.body}');
       }
 
-      // Continuation loop - keep fetching until no more pages or max reached.
-      // YouTube Music browse continuations are sent in the body; keeping them
-      // there is important for large liked libraries and private playlists.
+      // Continuation loop.
+      // ytmusicapi passes continuation in the JSON body, NOT in the URL params.
       int pages = 1;
       final seenContinuations = <String>{};
       while (continuationToken != null &&
           seenContinuations.add(continuationToken) &&
           pages < 80 &&
           allSongs.length < 5000) {
+
+        final contUrl = 'https://music.youtube.com/youtubei/v1/browse?key=$apiKey&prettyPrint=false';
+
+        // Body needs context and continuation token. No browseId.
         final contBody = {
           'context': body['context'],
           'continuation': continuationToken,
         };
 
-        final contUri =
-            Uri.parse('https://music.youtube.com/youtubei/v1/browse').replace(
-          queryParameters: {
-            'key': apiKey,
-            'prettyPrint': 'false',
-          },
-        );
-        
-        await Future.delayed(const Duration(milliseconds: 1500)); // Prevent rate limiting
-        
+        await Future.delayed(const Duration(milliseconds: 300));
+
         response = await http
             .post(
-              contUri,
+              Uri.parse(contUrl),
               headers: requestHeaders,
               body: jsonEncode(contBody),
             )
-            .timeout(const Duration(seconds: 15));
+            .timeout(const Duration(seconds: 20));
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
@@ -504,7 +539,8 @@ class YoutubeAccountService {
             allowVideoFallback: allowVideoFallback,
           );
           allSongs.addAll(newSongs);
-          continuationToken = _extractContinuationToken(data, isPlaylist: true);
+          final bool isLikedMusic = browseId == 'VLLM' || browseId == 'VLVLLM' || browseId == 'LM';
+          continuationToken = _extractContinuationToken(data, isPlaylist: !isLikedMusic);
           pages++;
           debugPrint(
               'YT Browse ($browseId): Page $pages fetched ${newSongs.length} songs, total: ${allSongs.length}, hasMore: ${continuationToken != null}');
@@ -560,20 +596,38 @@ class YoutubeAccountService {
 
     // For playlists, try to restrict to the playlist shelf first to avoid grabbing related/mix tokens
     try {
+      final onResponseReceived = data['onResponseReceivedActions'] as List?;
+      final appendAction = onResponseReceived?.isNotEmpty == true ? onResponseReceived![0]['appendContinuationItemsAction'] : null;
+      final continuationItems = appendAction?['continuationItems'] as List?;
+
       final shelf = data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['sectionListRenderer']?['contents']?[0]?['musicPlaylistShelfRenderer'] ??
                     data['contents']?['singleColumnBrowseResultsRenderer']?['tabs']?[0]?['tabRenderer']?['content']?['sectionListRenderer']?['contents']?[0]?['musicShelfRenderer'] ??
                     data['contents']?['twoColumnBrowseResultsRenderer']?['secondaryContents']?['sectionListRenderer']?['contents']?[0]?['musicPlaylistShelfRenderer'] ??
                     data['continuationContents']?['musicPlaylistShelfContinuation'] ??
-                    data['continuationContents']?['musicShelfContinuation'];
+                    data['continuationContents']?['musicShelfContinuation'] ??
+                    // VLLM continuation comes back as sectionListContinuation — must handle it
+                    data['continuationContents']?['sectionListContinuation']?['contents']?[0]?['musicPlaylistShelfRenderer'] ??
+                    data['continuationContents']?['sectionListContinuation']?['contents']?[0]?['musicShelfRenderer'] ??
+                    data['continuationContents']?['sectionListContinuation'];
+                    
       if (shelf != null) {
         find(shelf['continuations']);
         if (token != null) return token;
       }
+      
+      // If we got continuationItems directly (new 2025 format), search them
+      if (continuationItems != null) {
+        find(continuationItems);
+        if (token != null) return token;
+      }
     } catch (_) {}
     
-    // If it's a playlist, we strictly DO NOT fall back to global recursive search, 
+    // For regular playlists, we strictly DO NOT fall back to global recursive search, 
     // because that will find the "Suggested songs" section and loop endlessly.
-    if (isPlaylist) return token;
+    if (isPlaylist) {
+      debugPrint('YT Token Extractor: Could not find token in standard shelf paths for strict playlist. Token is $token');
+      return token;
+    }
 
     find(data);
     return token;
@@ -622,6 +676,10 @@ class YoutubeAccountService {
       debugPrint('YT Parser: Starting parse for $album');
 
       // 1. Try standard paths first (including continuation contents)
+      final onResponseReceived = data['onResponseReceivedActions'] as List?;
+      final appendAction = onResponseReceived?.isNotEmpty == true ? onResponseReceived![0]['appendContinuationItemsAction'] : null;
+      final continuationItems = appendAction?['continuationItems'] as List?;
+
       final standardContents = data['contents']
                       ?['singleColumnBrowseResultsRenderer']?['tabs']?[0]
                   ?['tabRenderer']?['content']?['sectionListRenderer']
@@ -635,7 +693,8 @@ class YoutubeAccountService {
               ?['contents'] ??
           data['continuationContents']?['musicShelfContinuation']
               ?['contents'] ??
-          data['continuationContents']?['sectionListContinuation']?['contents'];
+          data['continuationContents']?['sectionListContinuation']?['contents'] ??
+          continuationItems;
 
       List<dynamic> itemsToProcess = [];
       if (standardContents is List) {

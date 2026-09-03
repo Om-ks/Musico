@@ -50,6 +50,8 @@ class PlaylistDetailScreen extends RemotePlaylistScreen {
 class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
   List<Song> _songs = [];
   bool _loading = true;
+  bool get _isLikedPlaylist =>
+      widget.playlist.id == 'LM' || widget.playlist.id == 'VLLM';
 
   @override
   void initState() {
@@ -61,12 +63,32 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
     setState(() => _loading = true);
     final account = context.read<AccountProvider>();
     List<Song> songs = [];
-    
-    // Always try InnerTube API first (works for both auth and guest)
+
     final headers = await account.getAuthHeaders() ?? <String, String>{};
-    
-    if (widget.playlist.id == 'LM' || widget.playlist.id == 'VLLM') {
-      songs = account.library.likedSongs;
+
+    if (_isLikedPlaylist) {
+      // Wait for cookie to be loaded from SharedPreferences before fetching
+      await account.ready;
+      // Re-get headers now that the cookie is guaranteed to be loaded
+      final freshHeaders = await account.getAuthHeaders() ?? <String, String>{};
+      // For Liked Music: fetch directly from YouTube with full pagination
+      try {
+        songs = await YoutubeAccountService().fetchPlaylistSongs(
+          freshHeaders,
+          'VLLM',
+          album: 'Liked Music',
+        );
+        // Sync fetched songs into the app library (Library tab will reflect these)
+        if (songs.isNotEmpty && account.youtubeAuthorized) {
+          account.updateLikedSongsFromDirectFetch(songs);
+        }
+      } catch (e) {
+        debugPrint('Liked songs direct fetch failed: $e');
+      }
+      // Fallback to library cache if fetch returned nothing
+      if (songs.isEmpty) {
+        songs = account.library.likedSongs;
+      }
     } else {
       try {
         songs = await YoutubeAccountService().fetchPlaylistSongs(
@@ -77,17 +99,17 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
       } catch (e) {
         debugPrint('InnerTube playlist fetch failed: $e');
       }
-    }
-    
-    // Fallback to Data API / Scraper
-    if (songs.isEmpty) {
-      try {
-        songs = await ApiService.getPlaylistSongs(widget.playlist);
-      } catch (e) {
-        debugPrint('Public playlist fetch fallback failed: $e');
+
+      // Fallback to Data API / Scraper
+      if (songs.isEmpty) {
+        try {
+          songs = await ApiService.getPlaylistSongs(widget.playlist);
+        } catch (e) {
+          debugPrint('Public playlist fetch fallback failed: $e');
+        }
       }
     }
-    
+
     if (!mounted) return;
     setState(() {
       _songs = songs;
@@ -299,7 +321,7 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  widget.playlist.owner,
+                  '${widget.playlist.owner} • ${_songs.length} songs',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white54, fontSize: 13),

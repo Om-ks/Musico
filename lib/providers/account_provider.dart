@@ -46,6 +46,9 @@ class AccountProvider extends ChangeNotifier {
     _ready = _init();
   }
 
+  /// Resolves when _init() completes (cookie loaded from SharedPreferences).
+  Future<void> get ready => _ready;
+
   String? get cookieString => _cookieString;
   AccountLibrary get library => _library;
   bool get isSignedIn => _cookieString != null || _mode == AccountMode.youtube;
@@ -64,7 +67,7 @@ class AccountProvider extends ChangeNotifier {
     final cachedName = _cachedDisplayName?.trim();
     if (cachedName != null && cachedName.isNotEmpty) return cachedName;
     if (email != null) return email!;
-    return 'Guest User';
+    return _mode == AccountMode.youtube ? 'YouTube Music User' : 'Guest User';
   }
 
   String get statusText {
@@ -136,9 +139,14 @@ class AccountProvider extends ChangeNotifier {
       debugPrint('AccountProvider: Starting _init');
       final prefs = await SharedPreferences.getInstance();
       _youtubeAuthorized = prefs.getBool(_authorizedKey) ?? false;
+      _cookieString = prefs.getString('sapisid_cookie');
       _cachedDisplayName = prefs.getString(_cachedDisplayNameKey);
       _cachedEmail = prefs.getString(_cachedEmailKey);
       _cachedPhotoUrl = prefs.getString(_cachedPhotoUrlKey);
+      
+      if (_youtubeAuthorized) {
+        _mode = AccountMode.youtube;
+      }
 
       final mappingsStr = prefs.getString(_playlistMappingsKey);
       if (mappingsStr != null) {
@@ -289,6 +297,19 @@ class AccountProvider extends ChangeNotifier {
     notifyListeners();
     unawaited(_cacheLibrary());
     unawaited(_saveRecentlyUnliked());
+  }
+
+  /// Called after the Liked playlist directly fetches all songs from YouTube.
+  /// Syncs those songs into the app library so the Library tab also shows them.
+  void updateLikedSongsFromDirectFetch(List<Song> songs) {
+    if (songs.isEmpty) return;
+    _library = AccountLibrary(
+      likedSongs: songs,
+      recentSongs: _library.recentSongs,
+      playlists: _library.playlists,
+    );
+    notifyListeners();
+    unawaited(_cacheLibrary());
   }
 
   Future<void> _saveRecentlyUnliked() async {
@@ -522,22 +543,11 @@ class AccountProvider extends ChangeNotifier {
       );
     }
 
-    // Preserve local order: 
-    // 1. New remote likes go to the top
-    // 2. Existing likes stay in their local order
-    final localKeys = localLiked.map(_songKey).toSet();
-    final newRemoteLikes = filteredRemoteLiked
-        .where((song) => !localKeys.contains(_songKey(song)))
-        .toList(growable: false);
-
-    final preservedLocalLikes = localLiked
-        .where((song) => remoteKeys.contains(_songKey(song)) || !remoteKeys.contains(_songKey(song))) // Keep all local, but we know if it was removed remotely, wait, if it was removed remotely and NOT recently unliked, we shouldn't keep it unless we pushed it.
-        // Actually, if it's local but not remote, we just pushed it, so we keep it.
-        // Wait, if it was unliked on another device, it won't be in remote. We will re-push it!
-        // That's a known limitation of offline sync without proper tombstones.
-        .toList(growable: false);
-
-    return _dedupeSongs([...newRemoteLikes, ...preservedLocalLikes]);
+    // Strictly follow YouTube's remote order to prevent random shuffling!
+    // Any songs liked locally that haven't synced yet go at the top.
+    final localOnlyLikes = localLiked.where((s) => !remoteKeys.contains(_songKey(s))).toList();
+    
+    return _dedupeSongs([...localOnlyLikes, ...filteredRemoteLiked]);
   }
 
   Future<void> _clearUser() async {
@@ -640,8 +650,19 @@ class AccountProvider extends ChangeNotifier {
             }
           }
 
+          // If playlists failed to fetch but liked songs succeeded, preserve existing playlists
+          final safePlaylists = newLib.playlists.isEmpty && _library.playlists.isNotEmpty 
+              ? _library.playlists 
+              : newLib.playlists;
+              
+          final safeLib = AccountLibrary(
+            likedSongs: newLib.likedSongs,
+            recentSongs: newLib.recentSongs,
+            playlists: safePlaylists,
+          );
+
           // Use a timeout for the heavy merge operation
-          _library = await _mergeAndPushLocalLibrary(headers, newLib)
+          _library = await _mergeAndPushLocalLibrary(headers, safeLib)
               .timeout(const Duration(seconds: 150));
 
           await _cacheLibrary();
@@ -725,7 +746,7 @@ class AccountProvider extends ChangeNotifier {
   Future<HomeFeedData> fetchHomeFeed({String? continuationToken}) async {
     final headers = await getAuthHeaders();
     if (headers == null) return const HomeFeedData(chips: [], sections: []);
-    return await _youtubeAccountService.fetchHomeFeed(headers, continuationToken: continuationToken);
+    return await _youtubeAccountService.fetchHomeFeed(headers, params: continuationToken);
   }
 
 }

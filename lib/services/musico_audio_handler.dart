@@ -95,11 +95,20 @@ class MusicoAudioHandler extends BaseAudioHandler {
       queue.add(items);
     }
 
-    final currentItem = items[safeIndex];
-    if (_lastMediaId != currentItem.id) {
+    var currentItem = items[safeIndex];
+    if (duration > Duration.zero) {
+      currentItem = currentItem.copyWith(duration: duration);
+    }
+
+    // Always push the updated currentItem if ID changed, OR if duration changed (we can just always emit it, or check previous).
+    // The safest is to just update it if the duration is different.
+    final oldItem = mediaItem.valueOrNull;
+    if (_lastMediaId != currentItem.id || (oldItem != null && oldItem.duration != currentItem.duration)) {
       _lastMediaId = currentItem.id;
       mediaItem.add(currentItem);
     }
+
+
 
     final controls = <MediaControl>[
       MediaControl.skipToPrevious,

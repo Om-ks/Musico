@@ -230,7 +230,8 @@ class YoutubeAccountService {
                 final parsedInfo = _parseSubtitleAndCount(rawSubtitle);
                 
                 final thumbnails = twoRow['thumbnailRenderer']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
-                final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
+                String thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
+                  if (thumb.startsWith('//')) thumb = 'https:' + thumb;
                 
                 if (videoId != null && videoId.isNotEmpty && browseEndpoint == null) {
                   final s = Song(
@@ -271,7 +272,8 @@ class YoutubeAccountService {
                 final parsedInfo = _parseSubtitleAndCount(rawSubtitle);
                 
                 final thumbnails = responsive['thumbnail']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
-                final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
+                String thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
+                  if (thumb.startsWith('//')) thumb = 'https:' + thumb;
                 
                 final overlay = responsive['overlay']?['musicItemThumbnailOverlayRenderer']?['content']?['musicPlayButtonRenderer'];
                 final watchEndpoint = overlay?['playNavigationEndpoint']?['watchEndpoint'];
@@ -371,7 +373,8 @@ class YoutubeAccountService {
                     final parsedInfo = _parseSubtitleAndCount(rawSubtitle);
                     
                     final thumbnails = twoRow['thumbnailRenderer']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
-                    final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
+                    String thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
+                  if (thumb.startsWith('//')) thumb = 'https:' + thumb;
                     
                     if (videoId != null && videoId.isNotEmpty && browseEndpoint == null) {
                       final s = Song(
@@ -412,7 +415,8 @@ class YoutubeAccountService {
                       final parsedInfo = _parseSubtitleAndCount(rawSubtitle);
                       
                       final thumbnails = responsive['thumbnail']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'] as List?;
-                      final thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
+                      String thumb = (thumbnails != null && thumbnails.isNotEmpty) ? thumbnails.last['url']?.toString() ?? '' : '';
+                  if (thumb.startsWith('//')) thumb = 'https:' + thumb;
                       
                       final overlay = responsive['overlay']?['musicItemThumbnailOverlayRenderer']?['content']?['musicPlayButtonRenderer'];
                       final watchEndpoint = overlay?['playNavigationEndpoint']?['watchEndpoint'];
@@ -1305,6 +1309,7 @@ class YoutubeAccountService {
                 String thumb = '';
                 if (thumbnails != null && thumbnails is List && thumbnails.isNotEmpty) {
                   thumb = thumbnails.last['url']?.toString() ?? '';
+                    if (thumb.startsWith('//')) thumb = 'https:' + thumb;
                 }
 
                 musicPlaylists.add(MusicPlaylist(
@@ -1836,10 +1841,17 @@ class YoutubeAccountService {
 
   String _bestThumbnail(Map<String, dynamic>? thumbnails) {
     if (thumbnails == null) return '';
-    final keys = ['maxres', 'standard', 'high', 'medium', 'default'];
+    // Prefer 'high' (hqdefault.jpg) as it never 404s unlike maxres
+    final keys = ['high', 'medium', 'standard', 'maxres', 'default'];
     for (final key in keys) {
-      if (thumbnails[key] != null) return thumbnails[key]['url'];
+      if (thumbnails[key] != null) {
+        String url = thumbnails[key]['url'];
+        if (url.startsWith('//')) url = 'https:' + url;
+        return url;
+      }
     }
+    return '';
+  }
     return '';
   }
 

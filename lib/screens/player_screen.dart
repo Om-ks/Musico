@@ -924,6 +924,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget _progressBar(PlayerProvider provider) {
     final pos = _pendingSeekSeconds ?? provider.position.inSeconds.toDouble();
     final dur = provider.duration.inSeconds.toDouble();
+    final isUnknown = dur <= 0;
+    
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -935,15 +937,17 @@ class _PlayerScreenState extends State<PlayerScreen>
               thumbColor: const Color(0xFFE0C4FF),
               overlayColor: const Color(0xFFB06EF3).withValues(alpha: 0.25),
               trackHeight: 2.5,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6, elevation: 8),
+              thumbShape: isUnknown 
+                  ? SliderComponentShape.noThumb 
+                  : const RoundSliderThumbShape(enabledThumbRadius: 6, elevation: 8),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
             ),
             child: Slider(
-              value: dur > 0 ? pos.clamp(0.0, dur).toDouble() : 0,
+              value: isUnknown ? 0 : pos.clamp(0.0, dur).toDouble(),
               min: 0,
-              max: dur > 0 ? dur : 1,
-              onChanged: (v) => setState(() => _pendingSeekSeconds = v),
-              onChangeEnd: (v) {
+              max: isUnknown ? 1 : dur,
+              onChanged: isUnknown ? null : (v) => setState(() => _pendingSeekSeconds = v),
+              onChangeEnd: isUnknown ? null : (v) {
                 setState(() => _pendingSeekSeconds = null);
                 provider.seek(Duration(seconds: v.toInt()));
               },
@@ -954,12 +958,14 @@ class _PlayerScreenState extends State<PlayerScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(_fmt(Duration(seconds: pos.toInt())),
-                    style:
-                        const TextStyle(color: Colors.white54, fontSize: 12)),
-                Text(_fmt(provider.duration),
-                    style:
-                        const TextStyle(color: Colors.white54, fontSize: 12)),
+                Text(
+                  _fmt(Duration(seconds: pos.toInt())),
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                Text(
+                  isUnknown ? '--:--' : _fmt(provider.duration),
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
               ],
             ),
           ),

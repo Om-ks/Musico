@@ -377,7 +377,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     final ctrl = TextEditingController(text: oldName);
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A2E),
         title: const Text('Rename Playlist', style: TextStyle(color: Colors.white)),
         content: TextField(
@@ -395,7 +395,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
           ),
           ElevatedButton(
@@ -417,7 +417,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                   _load();
                 }
               }
-              if (mounted) Navigator.pop(context);
+              if (mounted) Navigator.pop(dialogContext);
             },
             child: const Text('Rename', style: TextStyle(color: Colors.white)),
           ),
@@ -430,7 +430,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     final ctrl = TextEditingController();
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A2E),
         title:
             const Text('New Playlist', style: TextStyle(color: Colors.white)),
@@ -449,7 +449,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child:
                 const Text('Cancel', style: TextStyle(color: Colors.white38)),
           ),
@@ -472,7 +472,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                   }
                 }
                 if (!mounted) return;
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 _load();
               }
             },

@@ -622,6 +622,34 @@ class AccountProvider extends ChangeNotifier {
     return (now - lastSync) > 1000 * 60 * 60 * 2;
   }
 
+  void updatePlaylistNameOptimistic(String idOrOldName, String newName) {
+    final idx = _library.playlists.indexWhere((p) => p.id == idOrOldName || p.title == idOrOldName);
+    if (idx >= 0) {
+      final p = _library.playlists[idx];
+      final newPlaylists = List<MusicPlaylist>.from(_library.playlists);
+      newPlaylists[idx] = MusicPlaylist(
+        id: p.id, title: newName, owner: p.owner,
+        thumbnailUrl: p.thumbnailUrl, itemCount: p.itemCount, source: p.source
+      );
+      _library = AccountLibrary(
+        likedSongs: _library.likedSongs,
+        recentSongs: _library.recentSongs,
+        playlists: newPlaylists,
+      );
+      notifyListeners();
+    }
+  }
+
+  void addPlaylistOptimistic(MusicPlaylist p) {
+    final newPlaylists = List<MusicPlaylist>.from(_library.playlists)..insert(0, p);
+    _library = AccountLibrary(
+      likedSongs: _library.likedSongs,
+      recentSongs: _library.recentSongs,
+      playlists: newPlaylists,
+    );
+    notifyListeners();
+  }
+
   Future<void> refreshLibrary({bool force = false}) async {
     final account = _cookieString;
     if (account == null || !_youtubeAuthorized) return;

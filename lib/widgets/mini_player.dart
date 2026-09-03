@@ -16,8 +16,9 @@ class MiniPlayer extends StatelessWidget {
 
         final song = provider.currentSong!;
         final progress = provider.duration.inSeconds > 0
-            ? provider.position.inSeconds / provider.duration.inSeconds
+            ? (provider.position.inSeconds / provider.duration.inSeconds).clamp(0.0, 1.0)
             : 0.0;
+        final isUnknown = provider.duration.inSeconds <= 0;
         final subtitle = provider.isLoading
             ? 'Loading audio...'
             : provider.error == PlayerError.none
@@ -160,7 +161,11 @@ class MiniPlayer extends StatelessWidget {
                   borderRadius:
                       const BorderRadius.vertical(bottom: Radius.circular(12)),
                   child: LinearProgressIndicator(
-                    value: progress.clamp(0.0, 1.0),
+                    value: isUnknown ? null : progress.clamp(0.0, 1.0),
+                    backgroundColor: Colors.white10,
+                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFB06EF3)),
+                    minHeight: 2,
+                  ),
                     backgroundColor: Colors.white10,
                     valueColor:
                         const AlwaysStoppedAnimation<Color>(Color(0xFFB06EF3)),

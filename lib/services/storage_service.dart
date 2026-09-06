@@ -6,20 +6,42 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/song.dart';
 
+// Service that handles persistent on-device storage using SharedPreferences.
+// Manages user favorites (likes), recently played history, search history,
+// custom playlists, and offline downloaded song metadata.
 class StorageService {
+  // Key for storing the list of user's favorited / liked songs in JSON format.
   static const String _favoritesKey = 'user_favorites_tracks';
+
+  // Key for storing the list of recently played songs.
   static const String _recentKey = 'user_recent_tracks';
+
+  // Key for storing detailed listening history (including play counts and timestamps) used for recommendations.
   static const String _historyKey = 'user_listening_history_tracks';
+
+  // Key for storing recent search queries submitted by the user.
   static const String _recentSearchesKey = 'user_recent_searches';
+
+  // Key for storing user-created custom playlists and their songs.
   static const String _playlistsKey = 'user_custom_playlists';
+
+  // Key for storing metadata and local file paths of songs downloaded for offline playback.
   static const String _downloadsKey = 'user_downloaded_tracks';
+
+  // Legacy key for backward compatibility with older versions of the app storing liked songs.
   static const String _legacyFavoritesKey = 'liked_songs';
+
+  // Legacy key for backward compatibility with older versions storing recently played songs.
   static const String _legacyRecentKey = 'recently_played';
+
+  // Legacy key for backward compatibility with older versions storing custom playlists.
   static const String _legacyPlaylistsKey = 'playlists';
 
+  // Checks whether a specific song (by its ID) is in the user's liked / favorites list.
   Future<bool> isLiked(String songId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Decode songs from both current and legacy storage keys to avoid losing past favorites.
       final songs = _decodeSongLists([
         prefs.getStringList(_favoritesKey) ?? const [],
         prefs.getStringList(_legacyFavoritesKey) ?? const [],
@@ -31,6 +53,7 @@ class StorageService {
     }
   }
 
+  // Toggles the favorite status of a song: adds it if not present, or removes it if already liked.
   Future<void> toggleLike(Song song) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -39,13 +62,17 @@ class StorageService {
         prefs.getStringList(_legacyFavoritesKey) ?? const [],
       ]);
 
+      // Check if the song already exists in the liked list.
       final existingIndex = songs.indexWhere((item) => item.id == song.id);
       if (existingIndex >= 0) {
+        // Song is already liked: remove it (unlike).
         songs.removeAt(existingIndex);
       } else {
+        // Song is not liked: insert at the beginning of the list.
         songs.insert(0, song);
       }
 
+      // Persist the updated list back to SharedPreferences.
       await _saveSongList(
         prefs,
         const [_favoritesKey, _legacyFavoritesKey],
@@ -56,6 +83,7 @@ class StorageService {
     }
   }
 
+  // Retrieves all liked songs from local storage, migrating legacy entries if found.
   Future<List<Song>> getLikedSongs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -63,6 +91,7 @@ class StorageService {
         prefs.getStringList(_favoritesKey) ?? const [],
         prefs.getStringList(_legacyFavoritesKey) ?? const [],
       ]);
+      // If songs were loaded, re-save them to ensure both current and legacy keys are up-to-date.
       if (songs.isNotEmpty) {
         await _saveSongList(
           prefs,
@@ -77,6 +106,7 @@ class StorageService {
     }
   }
 
+  // Overwrites the entire liked songs list with a new deduplicated list of songs.
   Future<void> saveLikedSongs(List<Song> songs) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -90,6 +120,8 @@ class StorageService {
     }
   }
 
+  // Records that a song was played, moving it to the top of the recently played list
+  // and incrementing its frequency in detailed listening history.
   Future<void> addRecentlyPlayed(Song song) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -98,8 +130,10 @@ class StorageService {
         prefs.getStringList(_legacyRecentKey) ?? const [],
       ]);
 
+      // Remove existing occurrence so we can move this track to the top (most recent).
       songs.removeWhere((item) => _songKey(item) == _songKey(song));
       songs.insert(0, song);
+      // Cap the recently played list to a maximum of 80 tracks to save memory.
       final capped = songs.length > 80 ? songs.sublist(0, 80) : songs;
 
       await _saveSongList(
@@ -107,12 +141,14 @@ class StorageService {
         const [_recentKey, _legacyRecentKey],
         capped,
       );
+      // Also update listening history statistics for algorithmic recommendations.
       await _saveListeningHistory(prefs, song);
     } catch (e) {
       debugPrint('Storage addRecentlyPlayed error: $e');
     }
   }
 
+  // Removes a specific song from the recently played list.
   Future<void> removeRecentlyPlayed(Song song) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -133,6 +169,7 @@ class StorageService {
     }
   }
 
+  // Retrieves the list of recently played songs from local storage.
   Future<List<Song>> getRecentlyPlayed() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -140,6 +177,7 @@ class StorageService {
         prefs.getStringList(_recentKey) ?? const [],
         prefs.getStringList(_legacyRecentKey) ?? const [],
       ]);
+      // Migrate and sync lists if items exist.
       if (songs.isNotEmpty) {
         await _saveSongList(
           prefs,
@@ -154,6 +192,7 @@ class StorageService {
     }
   }
 
+  // Persists a full list of recently played songs, capped at 80 items.
   Future<void> saveRecentlyPlayed(List<Song> songs) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -168,20 +207,26 @@ class StorageService {
     }
   }
 
+  // Prepends new songs to the existing recently played list without duplicates.
   Future<void> mergeRecentlyPlayed(List<Song> songs) async {
     if (songs.isEmpty) return;
     final existing = await getRecentlyPlayed();
     await saveRecentlyPlayed([...songs, ...existing]);
   }
 
+  // Loads weighted listening history used to train and feed the recommendation engine.
+  // Sorts tracks by a combination of play counts and recency, duplicating popular tracks
+  // proportionally so the recommendation algorithm weights them higher.
   Future<List<Song>> getListeningHistory() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final entries =
           _decodeHistoryEntries(prefs.getStringList(_historyKey) ?? []);
 
+      // If no detailed history exists yet, fall back to basic recently played songs.
       if (entries.isEmpty) return getRecentlyPlayed();
 
+      // Sort entries by recommendation score descending; break ties by last played date.
       entries.sort((a, b) {
         final scoreB = b.recommendationScore;
         final scoreA = a.recommendationScore;
@@ -190,6 +235,7 @@ class StorageService {
         return b.lastPlayed.compareTo(a.lastPlayed);
       });
 
+      // Repeat songs with high play counts (up to 4 times) to weight them in seed analysis.
       final weighted = <Song>[];
       for (final entry in entries.take(160)) {
         final repeats = entry.playCount.clamp(1, 4).toInt();
@@ -204,6 +250,7 @@ class StorageService {
     }
   }
 
+  // Retrieves the list of recent search query strings.
   Future<List<String>> getRecentSearches() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -219,6 +266,7 @@ class StorageService {
     }
   }
 
+  // Adds a search term to recent searches, moving it to the top and capping at 15 items.
   Future<void> addRecentSearch(String query) async {
     try {
       final cleanQuery = query.trim();
@@ -228,6 +276,7 @@ class StorageService {
       final searches = List<String>.from(
         prefs.getStringList(_recentSearchesKey) ?? const [],
       );
+      // Remove any case-insensitive duplicate of the query.
       searches.removeWhere(
         (item) => item.toLowerCase() == cleanQuery.toLowerCase(),
       );
@@ -241,6 +290,7 @@ class StorageService {
     }
   }
 
+  // Deletes all stored recent searches.
   Future<void> clearRecentSearches() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -250,6 +300,7 @@ class StorageService {
     }
   }
 
+  // Deletes a single specific query from the recent searches list.
   Future<void> removeRecentSearch(String query) async {
     try {
       final cleanQuery = query.trim().toLowerCase();
@@ -266,6 +317,8 @@ class StorageService {
     }
   }
 
+  // Retrieves all custom playlists and their associated lists of songs.
+  // Merges modern and legacy storage entries to ensure no user playlists are lost.
   Future<Map<String, List<Song>>> getPlaylists() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -282,6 +335,7 @@ class StorageService {
     }
   }
 
+  // Returns all Song objects that have been downloaded locally onto the device.
   Future<List<Song>> getDownloadedSongs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -294,6 +348,7 @@ class StorageService {
     }
   }
 
+  // Returns a map linking song composite keys (source:id) to their local file paths on the device.
   Future<Map<String, String>> getDownloadPaths() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -309,16 +364,19 @@ class StorageService {
     }
   }
 
+  // Looks up the local file system path for a specific downloaded song, if it exists.
   Future<String?> getDownloadPath(Song song) async {
     final paths = await getDownloadPaths();
     return paths[_songKey(song)];
   }
 
+  // Verifies whether a song is saved locally AND the physical audio file actually exists on disk.
   Future<bool> isDownloaded(Song song) async {
     final path = await getDownloadPath(song);
     return path != null && await File(path).exists();
   }
 
+  // Records a newly downloaded song into storage with its absolute local storage path.
   Future<void> saveDownloadedSong(Song song, String localPath) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -326,6 +384,7 @@ class StorageService {
         prefs.getStringList(_downloadsKey) ?? [],
       )..removeWhere((entry) => _songKey(entry.song) == _songKey(song));
 
+      // Add as the most recent download at the beginning of the list.
       entries.insert(
         0,
         _DownloadEntry(
@@ -341,6 +400,7 @@ class StorageService {
     }
   }
 
+  // Removes a song from downloaded tracks storage and deletes the physical file from the device disk.
   Future<void> removeDownloadedSong(Song song) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -349,14 +409,17 @@ class StorageService {
       );
       final removed = <_DownloadEntry>[];
 
+      // Remove the matching entry from the in-memory list.
       entries.removeWhere((entry) {
         final matches = _songKey(entry.song) == _songKey(song);
         if (matches) removed.add(entry);
         return matches;
       });
 
+      // Update the SharedPreferences list.
       await prefs.setStringList(_downloadsKey, _encodeDownloadEntries(entries));
 
+      // Physically delete the local audio file from disk.
       for (final entry in removed) {
         try {
           final file = File(entry.path);
@@ -368,6 +431,7 @@ class StorageService {
     }
   }
 
+  // Creates a new empty user playlist under the given name if one does not already exist.
   Future<void> createPlaylist(String name) async {
     try {
       final cleanName = name.trim();
@@ -385,6 +449,7 @@ class StorageService {
     }
   }
 
+  // Deletes an entire user playlist by its name.
   Future<void> deletePlaylist(String name) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -398,6 +463,7 @@ class StorageService {
     }
   }
 
+  // Renames an existing playlist while preserving all of its songs.
   Future<void> renamePlaylist(String oldName, String newName) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -415,6 +481,7 @@ class StorageService {
     }
   }
 
+  // Adds a song to a user playlist, placing it at the front and avoiding duplicates.
   Future<void> addSongToPlaylist(String name, Song song) async {
     try {
       final cleanName = name.trim();
@@ -432,6 +499,7 @@ class StorageService {
     }
   }
 
+  // Replaces the songs inside a named playlist with a new, deduplicated song list.
   Future<void> savePlaylist(String name, List<Song> songs) async {
     try {
       final cleanName = name.trim();
@@ -446,6 +514,7 @@ class StorageService {
     }
   }
 
+  // Merges new songs into an existing playlist without wiping existing tracks.
   Future<void> mergePlaylist(String name, List<Song> songs) async {
     if (songs.isEmpty) return;
     final playlists = await getPlaylists();
@@ -453,6 +522,7 @@ class StorageService {
     await savePlaylist(name, [...songs, ...existing]);
   }
 
+  // Removes a specific song from a user playlist.
   Future<void> removeSongFromPlaylist(String name, Song song) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -467,6 +537,7 @@ class StorageService {
     }
   }
 
+  // Helper method to JSON-encode and persist the entire playlist map to both primary and legacy keys.
   Future<void> _savePlaylistMap(
     SharedPreferences prefs,
     Map<String, List<Song>> playlists,
@@ -480,6 +551,8 @@ class StorageService {
     await prefs.setString(_legacyPlaylistsKey, encoded);
   }
 
+  // Updates frequency metrics and last-played timestamps whenever a song is played,
+  // capping the history size to 300 entries to prevent memory bloating.
   Future<void> _saveListeningHistory(
     SharedPreferences prefs,
     Song song,
@@ -491,6 +564,7 @@ class StorageService {
     final now = DateTime.now();
 
     if (index >= 0) {
+      // Existing song: increment its play count and update the last played timestamp.
       final existing = entries[index];
       entries[index] = existing.copyWith(
         song: song,
@@ -498,6 +572,7 @@ class StorageService {
         lastPlayed: now,
       );
     } else {
+      // New song: insert fresh entry with initial count of 1.
       entries.add(
         _HistoryEntry(
           song: song,
@@ -508,16 +583,19 @@ class StorageService {
       );
     }
 
+    // Sort by play count descending, then by last played date.
     entries.sort((a, b) {
       final countCompare = b.playCount.compareTo(a.playCount);
       if (countCompare != 0) return countCompare;
       return b.lastPlayed.compareTo(a.lastPlayed);
     });
 
+    // Keep at most 300 entries in history.
     final capped = entries.length > 300 ? entries.sublist(0, 300) : entries;
     await prefs.setStringList(_historyKey, _encodeHistoryEntries(capped));
   }
 
+  // Deserializes a list of JSON string entries into Song model instances.
   List<Song> _decodeSongList(List<String> encodedSongs) {
     final songs = <Song>[];
     for (final encoded in encodedSongs) {
@@ -532,6 +610,7 @@ class StorageService {
     return songs;
   }
 
+  // Decodes songs from multiple sources (such as current and legacy keys) and deduplicates them.
   List<Song> _decodeSongLists(List<List<String>> encodedLists) {
     final songs = <Song>[];
     for (final encoded in encodedLists) {
@@ -540,6 +619,7 @@ class StorageService {
     return _dedupeSongs(songs);
   }
 
+  // Removes duplicate songs from a list using their unique composite keys.
   List<Song> _dedupeSongs(List<Song> songs) {
     final seen = <String>{};
     final deduped = <Song>[];
@@ -550,6 +630,7 @@ class StorageService {
     return deduped;
   }
 
+  // Serializes and saves a list of songs into multiple SharedPreferences keys simultaneously.
   Future<void> _saveSongList(
     SharedPreferences prefs,
     List<String> keys,
@@ -561,10 +642,12 @@ class StorageService {
     }
   }
 
+  // Converts a list of Song objects into an array of JSON string representations.
   List<String> _encodeSongList(List<Song> songs) {
     return songs.map((song) => jsonEncode(song.toJson())).toList();
   }
 
+  // Deserializes a JSON string representation into a map of playlist names to their song lists.
   Map<String, List<Song>> _decodePlaylistMap(String? encodedPlaylists) {
     if (encodedPlaylists == null || encodedPlaylists.isEmpty) return {};
     try {
@@ -588,6 +671,7 @@ class StorageService {
     }
   }
 
+  // Combines multiple playlist maps (such as legacy and modern playlists) into a single map.
   Map<String, List<Song>> _mergePlaylistMaps(
     List<Map<String, List<Song>>> maps,
   ) {
@@ -601,6 +685,7 @@ class StorageService {
     return merged;
   }
 
+  // Deserializes stored JSON strings into detailed _HistoryEntry objects.
   List<_HistoryEntry> _decodeHistoryEntries(List<String> encodedEntries) {
     final entries = <_HistoryEntry>[];
     for (final encoded in encodedEntries) {
@@ -632,6 +717,7 @@ class StorageService {
     return entries;
   }
 
+  // Serializes detailed history entries into an array of JSON strings for storage.
   List<String> _encodeHistoryEntries(List<_HistoryEntry> entries) {
     return entries.map((entry) {
       return jsonEncode({
@@ -643,6 +729,7 @@ class StorageService {
     }).toList();
   }
 
+  // Deserializes stored JSON strings into offline download tracking records.
   List<_DownloadEntry> _decodeDownloadEntries(List<String> encodedEntries) {
     final entries = <_DownloadEntry>[];
     for (final encoded in encodedEntries) {
@@ -670,6 +757,7 @@ class StorageService {
     return entries;
   }
 
+  // Serializes download records into JSON strings for local preferences storage.
   List<String> _encodeDownloadEntries(List<_DownloadEntry> entries) {
     return entries.map((entry) {
       return jsonEncode({
@@ -680,8 +768,10 @@ class StorageService {
     }).toList();
   }
 
+  // Generates a unique composite string key (format: 'source:id') for a song.
   String _songKey(Song song) => '${song.source}:${song.id}';
 
+  // Sanitizes a dynamic value into a clean trimmed string, or null if empty or invalid.
   String? _clean(dynamic value) {
     if (value == null) return null;
     final text = value.toString().trim();
@@ -689,12 +779,21 @@ class StorageService {
   }
 }
 
+// Data container tracking listening metrics for a specific song (play count, dates).
 class _HistoryEntry {
+  // The song model associated with this history item.
   final Song song;
+
+  // Total number of times this track has been played by the user.
   final int playCount;
+
+  // The timestamp when the user listened to this song for the very first time.
   final DateTime firstPlayed;
+
+  // The timestamp when the user most recently listened to this song.
   final DateTime lastPlayed;
 
+  // Constructor requiring all history entry parameters.
   const _HistoryEntry({
     required this.song,
     required this.playCount,
@@ -702,12 +801,16 @@ class _HistoryEntry {
     required this.lastPlayed,
   });
 
+  // Computes a weighted score balancing total play count and how recently the song was played.
+  // Recently heard tracks and frequently played tracks receive the highest scores.
   double get recommendationScore {
     final daysSincePlay = DateTime.now().difference(lastPlayed).inDays;
+    // Decays smoothly over a two-week period.
     final recency = 1 / (1 + daysSincePlay / 14);
     return playCount * 2.4 + recency * 7;
   }
 
+  // Returns a copy of this history entry with updated fields.
   _HistoryEntry copyWith({
     Song? song,
     int? playCount,
@@ -723,11 +826,18 @@ class _HistoryEntry {
   }
 }
 
+// Data container representing an offline downloaded song on the local filesystem.
 class _DownloadEntry {
+  // Metadata for the downloaded track.
   final Song song;
+
+  // The absolute file system path where the audio file is stored on the device.
   final String path;
+
+  // The timestamp when the audio file was saved.
   final DateTime savedAt;
 
+  // Constructor requiring the song, its local file path, and save timestamp.
   const _DownloadEntry({
     required this.song,
     required this.path,

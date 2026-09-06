@@ -13,15 +13,22 @@ import 'screens/library_screen.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/bottom_nav.dart';
 
+// Entrypoint of the application.
+// Initializes Flutter bindings, sets up system transparent status bars,
+// initializes background AudioService, and boots the widget tree with Providers.
 Future<void> main() async {
+  // Catches and logs uncaught asynchronous errors in the application zone.
   runZonedGuarded(() async {
+    // Ensures Flutter engine and native channel bindings are ready before plugins run.
     WidgetsFlutterBinding.ensureInitialized();
 
+    // Sets transparent system status bar with light icons for dark mode aesthetic.
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
     ));
 
+    // Boots the background audio handler responsible for OS lock screen notifications and controls.
     final audioHandler = await AudioService.init<MusicoAudioHandler>(
       builder: MusicoAudioHandler.new,
       config: const AudioServiceConfig(
@@ -33,10 +40,13 @@ Future<void> main() async {
       ),
     );
 
+    // Runs the root widget wrapped with multi-provider state management.
     runApp(
       MultiProvider(
         providers: [
+          // Global account provider managing user session and YouTube Music authorization.
           ChangeNotifierProvider(create: (_) => AccountProvider()),
+          // Global player provider managing audio playback engine, queue, and effects.
           ChangeNotifierProxyProvider<AccountProvider, PlayerProvider>(
             create: (_) => PlayerProvider(audioHandler: audioHandler),
             update: (_, account, player) => player!..updateAccount(account),
@@ -50,7 +60,9 @@ Future<void> main() async {
   });
 }
 
+// Root application widget that configures the MaterialApp dark theme, fonts, and home route.
 class MusicoApp extends StatelessWidget {
+  // Const constructor for the root application widget.
   const MusicoApp({super.key});
 
   @override
@@ -59,13 +71,15 @@ class MusicoApp extends StatelessWidget {
     return MaterialApp(
       title: 'Musico',
       debugShowCheckedModeBanner: false,
+      // Configure rich dark theme with accent purple and teal colors.
       theme: base.copyWith(
         scaffoldBackgroundColor: Colors.transparent,
         colorScheme: const ColorScheme.dark(
-          primary: Color(0xFFB06EF3),
-          secondary: Color(0xFF6E9EF3),
-          surface: Color(0xFF141420),
+          primary: Color(0xFFB06EF3), // Neon purple accent
+          secondary: Color(0xFF6E9EF3), // Light blue secondary
+          surface: Color(0xFF141420), // Dark surface container
         ),
+        // Modern Space Grotesk font family across the entire application.
         textTheme: GoogleFonts.spaceGroteskTextTheme(base.textTheme),
         splashColor: const Color(0xFFB06EF3).withValues(alpha: 0.10),
         highlightColor: Colors.white.withValues(alpha: 0.04),
@@ -86,6 +100,7 @@ class MusicoApp extends StatelessWidget {
             side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
           ),
         ),
+        // Customized seek sliders for music playback.
         sliderTheme: SliderThemeData(
           activeTrackColor: const Color(0xFFB06EF3),
           inactiveTrackColor: Colors.white.withValues(alpha: 0.1),
@@ -96,11 +111,18 @@ class MusicoApp extends StatelessWidget {
           overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
         ),
       ),
+      // SplashGate renders a brief animated splash screen before loading the main shell.
       home: const SplashGate(),
     );
   }
 }
 
+// ============================================================================
+// SplashGate: Initial splash screen gatekeeper
+// ============================================================================
+/// [SplashGate] acts as an introductory splash screen display on startup.
+/// It displays the branding splash screen ([_MusicoSplash]) for approximately
+/// 1.25 seconds before smoothly cross-fading into the main application ([MainShell]).
 class SplashGate extends StatefulWidget {
   const SplashGate({super.key});
 
@@ -108,19 +130,24 @@ class SplashGate extends StatefulWidget {
   State<SplashGate> createState() => _SplashGateState();
 }
 
+/// State for [SplashGate] that manages the startup delay timer and cross-fade.
 class _SplashGateState extends State<SplashGate> {
+  /// Whether the initial splash delay has completed and the main app should show.
   bool _showApp = false;
 
   @override
   void initState() {
     super.initState();
+    // Wait 1250 milliseconds (1.25s) before transitioning to the main shell.
     Future.delayed(const Duration(milliseconds: 1250), () {
+      // Ensure the widget is still mounted in the tree before updating state.
       if (mounted) setState(() => _showApp = true);
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    // AnimatedSwitcher provides a smooth fade transition between the splash screen and MainShell.
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 420),
       child: _showApp ? const MainShell() : const _MusicoSplash(),
@@ -128,6 +155,11 @@ class _SplashGateState extends State<SplashGate> {
   }
 }
 
+// ============================================================================
+// _MusicoSplash: Branding Splash View
+// ============================================================================
+/// A lightweight branding splash screen displaying the Musico logo centered over
+/// the app's signature multi-color dark gradient background.
 class _MusicoSplash extends StatelessWidget {
   const _MusicoSplash();
 
@@ -136,6 +168,7 @@ class _MusicoSplash extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.black,
       body: Container(
+        // Signature dark ambient gradient background: purple top-left to teal bottom-right.
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -153,6 +186,7 @@ class _MusicoSplash extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Musico brand logo image
               Image.asset(
                 'assets/app_logo.png',
                 width: 138,
@@ -167,31 +201,51 @@ class _MusicoSplash extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// MainShell: Core Application Container & Navigation Shell
+// ============================================================================
+/// [MainShell] is the primary scaffold holding the app's core user interface once loaded.
+/// It contains:
+/// 1. A slide-out side drawer ([_AboutDrawer]) for app info and account settings.
+/// 2. An [IndexedStack] holding the 3 primary screens (Home, Search, Library) to preserve
+///    their scroll positions and state when switching between tabs.
+/// 3. A persistent [MiniPlayer] dock floating just above the bottom navigation bar.
+/// 4. A custom [BottomNav] bar for switching between screens.
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
   @override
   State<MainShell> createState() => _MainShellState();
 }
 
+/// State for [MainShell] managing active tab switching and drawer opening.
 class _MainShellState extends State<MainShell> {
+  /// GlobalKey to access ScaffoldState to programmatically open the drawer.
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  /// Currently selected bottom navigation tab index (0: Home, 1: Search, 2: Library).
   int _currentIndex = 0;
 
+  /// Helper method passed down to child screens allowing them to open the drawer.
   void _openDrawer() => _scaffoldKey.currentState?.openDrawer();
 
   @override
   Widget build(BuildContext context) {
+    // The three primary screen widgets indexed to match BottomNav tabs.
     final List<Widget> screens = [
       HomeScreen(onOpenMenu: _openDrawer),
       SearchScreen(onOpenMenu: _openDrawer),
       LibraryScreen(onOpenMenu: _openDrawer),
     ];
 
+    // Listener captures user gestures anywhere on the screen.
+    // This notifies PlayerProvider of active user interaction, which is necessary
+    // on some platforms (like mobile web/iOS) to allow autoplaying audio streams.
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) =>
           context.read<PlayerProvider>().registerUserInteraction(),
       child: Container(
+        // Ambient background gradient matching the Musico theme.
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -209,12 +263,17 @@ class _MainShellState extends State<MainShell> {
           key: _scaffoldKey,
           extendBody: true,
           backgroundColor: Colors.transparent,
+          // Side drawer containing about information and account controls
           drawer: const _AboutDrawer(),
+          // IndexedStack maintains state of each tab so switching doesn't reset scroll or data
           body: IndexedStack(index: _currentIndex, children: screens),
+          // Bottom area combines the floating MiniPlayer and the navigation bar
           bottomNavigationBar: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Persistent mini playback control widget
               const MiniPlayer(),
+              // Custom tab bar for navigation
               BottomNav(
                 currentIndex: _currentIndex,
                 onTap: (i) => setState(() => _currentIndex = i),
@@ -227,6 +286,14 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
+// ============================================================================
+// _AboutDrawer: Side Navigation Drawer for Info and Account
+// ============================================================================
+/// Side navigation drawer opened by tapping the menu button on any primary screen.
+/// It displays:
+/// - Musico branding logo and developer credits.
+/// - Expandable accordions for "About" and "Tips".
+/// - User account card ([_AccountPanel]) displaying sign-in status and session controls.
 class _AboutDrawer extends StatefulWidget {
   const _AboutDrawer();
 
@@ -234,11 +301,14 @@ class _AboutDrawer extends StatefulWidget {
   State<_AboutDrawer> createState() => _AboutDrawerState();
 }
 
+/// State for [_AboutDrawer] tracking accordion expansion.
 class _AboutDrawerState extends State<_AboutDrawer> {
+  /// Stores which collapsible section is currently open ('about', 'tips', or null if closed).
   String? _openSection;
 
   @override
   Widget build(BuildContext context) {
+    // Watch AccountProvider so the drawer reacts immediately when user signs in or out.
     final account = context.watch<AccountProvider>();
 
     return Drawer(
@@ -249,6 +319,7 @@ class _AboutDrawerState extends State<_AboutDrawer> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Musico text logo at top of drawer
               Padding(
                 padding: const EdgeInsets.only(bottom: 12.0),
                 child: Image.asset(
@@ -260,6 +331,7 @@ class _AboutDrawerState extends State<_AboutDrawer> {
                 ),
               ),
               const SizedBox(height: 4),
+              // Creator attribution line
               Text(
                 'Made by Om Kshirsagar',
                 style: GoogleFonts.spaceGrotesk(
@@ -269,6 +341,7 @@ class _AboutDrawerState extends State<_AboutDrawer> {
                 ),
               ),
               const SizedBox(height: 22),
+              // --- "About" Accordion Tile ---
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(
@@ -282,7 +355,8 @@ class _AboutDrawerState extends State<_AboutDrawer> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                onTap: () => setState(() => _openSection = 'about'),
+                // Toggle 'about' section open or closed
+                onTap: () => setState(() => _openSection = _openSection == 'about' ? null : 'about'),
               ),
               if (_openSection == 'about')
                 Padding(
@@ -296,6 +370,7 @@ class _AboutDrawerState extends State<_AboutDrawer> {
                     ),
                   ),
                 ),
+              // --- "Tips" Accordion Tile ---
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(
@@ -309,7 +384,8 @@ class _AboutDrawerState extends State<_AboutDrawer> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                onTap: () => setState(() => _openSection = 'tips'),
+                // Toggle 'tips' section open or closed
+                onTap: () => setState(() => _openSection = _openSection == 'tips' ? null : 'tips'),
               ),
               if (_openSection == 'tips')
                 Text(
@@ -320,7 +396,9 @@ class _AboutDrawerState extends State<_AboutDrawer> {
                     height: 1.5,
                   ),
                 ),
+              // Spacer pushes the account panel to the bottom of the drawer
               const Spacer(),
+              // Account authentication & session management panel
               _AccountPanel(account: account),
             ],
           ),
@@ -330,7 +408,16 @@ class _AboutDrawerState extends State<_AboutDrawer> {
   }
 }
 
+// ============================================================================
+// _AccountPanel: User Profile & Authentication Status Panel
+// ============================================================================
+/// Renders the user's YouTube / Google account status card at the bottom of the drawer.
+/// Features:
+/// - User profile photo (or fallback icon) and display name.
+/// - Live session indicators (connected, cached, or guest mode).
+/// - Dynamic action buttons to sign in, reconnect session, link account, or sign out.
 class _AccountPanel extends StatelessWidget {
+  /// The account provider managing user state and authentication methods.
   final AccountProvider account;
 
   const _AccountPanel({required this.account});
@@ -355,8 +442,10 @@ class _AccountPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Row containing user avatar and account identity text
           Row(
             children: [
+              // User avatar image or fallback person icon
               CircleAvatar(
                 radius: 18,
                 backgroundColor: const Color(0xFF20202C),
@@ -374,6 +463,7 @@ class _AccountPanel extends StatelessWidget {
                     : null,
               ),
               const SizedBox(width: 10),
+              // User display name and active connection summary
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -407,6 +497,7 @@ class _AccountPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
+          // Descriptive status message explaining current connectivity/sync state
           Text(
             account.statusText,
             style: TextStyle(
@@ -415,6 +506,7 @@ class _AccountPanel extends StatelessWidget {
               height: 1.35,
             ),
           ),
+          // Error notification banner if any auth/sync error occurred
           if (error != null && error.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
@@ -429,7 +521,9 @@ class _AccountPanel extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
+          // Action buttons: Sign In, Reconnect, or Sign Out depending on state
           if (!signedIn) ...[
+            // Guest mode: prompt to sign in with YouTube
             _modeButton(
               context,
               label: 'Sign in with YouTube',
@@ -438,6 +532,7 @@ class _AccountPanel extends StatelessWidget {
               color: const Color(0xFFB06EF3),
             ),
           ] else ...[
+            // Expired live session: allow user to reconnect YouTube credentials
             if (!liveSession && account.youtubeAuthorized)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -449,6 +544,7 @@ class _AccountPanel extends StatelessWidget {
                   color: const Color(0xFFB06EF3),
                 ),
               )
+            // Guest mode with partial features: option to link YouTube Music
             else if (mode == AccountMode.guest)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -460,6 +556,7 @@ class _AccountPanel extends StatelessWidget {
                   color: const Color(0xFFB06EF3),
                 ),
               ),
+            // Sign out button to clear local session and cached data
             _modeButton(
               context,
               label: 'Sign out',
@@ -474,6 +571,8 @@ class _AccountPanel extends StatelessWidget {
     );
   }
 
+  /// Helper widget building a consistent full-width action button.
+  /// Shows an indeterminate spinner if the account provider is currently busy.
   Widget _modeButton(
     BuildContext context, {
     required String label,
@@ -485,7 +584,9 @@ class _AccountPanel extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: TextButton.icon(
+        // Disable button click when an asynchronous account operation is in progress
         onPressed: account.isBusy ? null : onPressed,
+        // Show progress spinner when busy, otherwise display the button icon
         icon: account.isBusy
             ? const SizedBox(
                 width: 16,

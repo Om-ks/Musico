@@ -5,20 +5,28 @@ import 'package:marquee/marquee.dart';
 import '../providers/player_provider.dart';
 import '../screens/player_screen.dart';
 
+// A floating mini-player widget pinned above the bottom navigation bar.
+// Displays the current song thumbnail, marquee title, artist, playback controls,
+// and a subtle bottom progress bar. Tapping opens the full-screen PlayerScreen.
 class MiniPlayer extends StatelessWidget {
+  // Const constructor for the stateless MiniPlayer.
   const MiniPlayer({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Listen to changes in PlayerProvider (track change, play/pause, buffering, progress).
     return Consumer<PlayerProvider>(
       builder: (_, provider, __) {
+        // Hide the mini-player completely when nothing is queued or playing.
         if (provider.currentSong == null) return const SizedBox.shrink();
 
         final song = provider.currentSong!;
+        // Calculate progress percentage between 0.0 and 1.0.
         final progress = provider.duration.inSeconds > 0
             ? (provider.position.inSeconds / provider.duration.inSeconds).clamp(0.0, 1.0)
             : 0.0;
         final isUnknown = provider.duration.inSeconds <= 0;
+        // Dynamic subtitle indicating buffering state, error recovery, or track artist.
         final subtitle = provider.isLoading
             ? 'Loading audio...'
             : provider.error == PlayerError.none
@@ -26,6 +34,7 @@ class MiniPlayer extends StatelessWidget {
                 : 'Trying another playable source';
 
         return GestureDetector(
+          // Tapping anywhere on the mini-player slides up the full-screen player modal.
           onTap: () => Navigator.push(
             context,
             PageRouteBuilder(
@@ -61,7 +70,7 @@ class MiniPlayer extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                   child: Row(
                     children: [
-                      // Thumbnail
+                      // Song album artwork / thumbnail with rounded corners.
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: song.thumbnailUrl.isNotEmpty
@@ -75,11 +84,12 @@ class MiniPlayer extends StatelessWidget {
                             : _defaultArt(),
                       ),
                       const SizedBox(width: 10),
-                      // Song info
+                      // Song title & artist text with marquee scrolling for long titles.
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Marquee scrolling text for song title.
                             SizedBox(
                               height: 18,
                               child: Marquee(
@@ -99,6 +109,7 @@ class MiniPlayer extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 2),
+                            // Subtitle with animated transition between artist name and loading/error states.
                             AnimatedSwitcher(
                               duration: const Duration(milliseconds: 180),
                               child: SizedBox(
@@ -125,13 +136,14 @@ class MiniPlayer extends StatelessWidget {
                           ],
                         ),
                       ),
-                      // Controls
+                      // Previous track button.
                       _controlBtn(
                         Icons.skip_previous_rounded,
                         tooltip: 'Previous',
                         onTap: provider.playPrevious,
                         size: 24,
                       ),
+                      // Dynamic Play/Pause button with loading spinner when buffering.
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 160),
                         child: _playPauseBtn(
@@ -141,12 +153,14 @@ class MiniPlayer extends StatelessWidget {
                           provider: provider,
                         ),
                       ),
+                      // Next track button.
                       _controlBtn(
                         Icons.skip_next_rounded,
                         tooltip: 'Next',
                         onTap: provider.playNext,
                         size: 24,
                       ),
+                      // Close button to stop playback and dismiss mini-player.
                       _controlBtn(
                         Icons.close_rounded,
                         tooltip: 'Close player',
@@ -156,7 +170,7 @@ class MiniPlayer extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Progress bar
+                // Slim progress bar running along the bottom edge of the mini-player card.
                 ClipRRect(
                   borderRadius:
                       const BorderRadius.vertical(bottom: Radius.circular(12)),
@@ -165,11 +179,6 @@ class MiniPlayer extends StatelessWidget {
                     backgroundColor: Colors.white10,
                     valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFB06EF3)),
                     minHeight: 2,
-                  ),
-                    backgroundColor: Colors.white10,
-                    valueColor:
-                        const AlwaysStoppedAnimation<Color>(Color(0xFFB06EF3)),
-                    minHeight: 3,
                   ),
                 ),
               ],
@@ -180,6 +189,7 @@ class MiniPlayer extends StatelessWidget {
     );
   }
 
+  // Builds the play/pause button, displaying a small circular progress spinner when audio is buffering.
   Widget _playPauseBtn({
     Key? key,
     required PlayerProvider provider,
@@ -213,6 +223,7 @@ class MiniPlayer extends StatelessWidget {
     );
   }
 
+  // Generic helper for building compact icon buttons (skip previous, skip next, close).
   Widget _controlBtn(
     IconData icon, {
     Key? key,
@@ -234,6 +245,7 @@ class MiniPlayer extends StatelessWidget {
     );
   }
 
+  // Placeholder musical note icon displayed if a song thumbnail fails to load or is empty.
   Widget _defaultArt() => Container(
         width: 42,
         height: 42,

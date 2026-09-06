@@ -16,6 +16,13 @@ analyzer:
     - find_*.dart
     - test_*.dart
     - print_path.dart
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   # The lint rules applied to this project can be customized in the

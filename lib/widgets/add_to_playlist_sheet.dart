@@ -8,6 +8,8 @@ import '../services/storage_service.dart';
 import '../services/youtube_account_service.dart';
 import '../providers/account_provider.dart';
 
+// Displays a modern modal bottom sheet that allows the user to add a song to either
+// a local offline playlist or their authenticated YouTube Music account playlists.
 Future<void> showAddToPlaylistSheet(
   BuildContext context,
   Song song, {
@@ -24,10 +26,15 @@ Future<void> showAddToPlaylistSheet(
   );
 }
 
+// Internal StatefulWidget representing the interactive content inside the bottom sheet.
 class _AddToPlaylistSheet extends StatefulWidget {
+  // The track that will be added to the selected playlist.
   final Song song;
+
+  // Optional notification callback triggered after the song is successfully added.
   final VoidCallback? onChanged;
 
+  // Constructor requiring the target song and optional onChanged callback.
   const _AddToPlaylistSheet({
     required this.song,
     this.onChanged,
@@ -37,19 +44,31 @@ class _AddToPlaylistSheet extends StatefulWidget {
   State<_AddToPlaylistSheet> createState() => _AddToPlaylistSheetState();
 }
 
+// State class managing local storage playlists and remote YouTube playlists.
 class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
+  // Local storage service to retrieve and update user playlists on the device.
   final _storage = StorageService();
+
+  // YouTube account service to interact with online YouTube Music playlists.
   final _youtube = YoutubeAccountService();
+
+  // Map of local playlist names to their constituent songs.
   Map<String, List<Song>> _localPlaylists = {};
+
+  // List of online playlists fetched from the user's logged-in YouTube account.
   List<MusicPlaylist> _ytPlaylists = [];
+
+  // Flag indicating whether playlists are currently being loaded from storage and account.
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    // Load local and YouTube playlists when the sheet opens.
     _load();
   }
 
+  // Fetches local playlists from SharedPreferences and YouTube playlists from AccountProvider.
   Future<void> _load() async {
     final account = context.read<AccountProvider>();
     final local = await _storage.getPlaylists();
@@ -61,8 +80,11 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
     });
   }
 
+  // Prompts the user with a dialog to enter a new playlist name, then creates it
+  // both locally and on YouTube (if the user is currently signed in).
   Future<void> _createPlaylist() async {
     final controller = TextEditingController();
+    // Show a dialog with a text input field for the playlist name.
     final name = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -102,16 +124,17 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
       ),
     );
 
+    // If user canceled the dialog or submitted blank text, abort.
     if (name == null || name.isEmpty) return;
     
-    // Create locally
+    // Create locally in device storage and immediately add the song to it.
     await _storage.createPlaylist(name);
     await _storage.addSongToPlaylist(name, widget.song);
     
     widget.onChanged?.call();
     if (mounted) Navigator.pop(context);
 
-    // Optionally create on YouTube if signed in
+    // Optionally create on YouTube if the user is authenticated and the song is from YouTube.
     if (mounted) {
       final account = context.read<AccountProvider>();
       if (account.hasLiveSession && account.youtubeAuthorized && widget.song.source == 'youtube') {
@@ -132,6 +155,7 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
     }
   }
 
+  // Adds the song to a local playlist in SharedPreferences, invokes the callback, and dismisses the sheet.
   Future<void> _addToLocal(String playlistName) async {
     await _storage.addSongToPlaylist(playlistName, widget.song);
     widget.onChanged?.call();
@@ -139,11 +163,13 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
     Navigator.pop(context);
   }
 
+  // Adds the song to a remote YouTube Music playlist using OAuth/cookie credentials in the background.
   Future<void> _addToYoutube(MusicPlaylist playlist) async {
     final account = context.read<AccountProvider>();
     widget.onChanged?.call();
     if (mounted) Navigator.pop(context);
 
+    // Run YouTube API update asynchronously without blocking the UI.
     if (account.hasLiveSession && account.youtubeAuthorized && widget.song.source == 'youtube') {
       unawaited(() async {
         final headers = await account.getAuthHeaders();
@@ -158,6 +184,7 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
     }
   }
 
+  // Builds the visual UI of the bottom sheet containing drag pill, header, and playlist lists.
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -173,6 +200,7 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Top pill handle indicating that the modal sheet is draggable/dismissible.
               Center(
                 child: Container(
                   width: 36,
@@ -184,6 +212,7 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
                 ),
               ),
               const SizedBox(height: 18),
+              // Header displaying the title of the song being added.
               Row(
                 children: [
                   const Icon(Icons.playlist_add_rounded,
@@ -204,6 +233,7 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
                 ],
               ),
               const SizedBox(height: 14),
+              // Show circular loading indicator while playlists are being fetched.
               if (_loading)
                 const Padding(
                   padding: EdgeInsets.all(20),
@@ -216,6 +246,7 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
                   child: ListView(
                     shrinkWrap: true,
                     children: [
+                      // Tile button allowing the user to create a new playlist from scratch.
                       ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading:
@@ -227,6 +258,7 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
                         ),
                         onTap: _createPlaylist,
                       ),
+                      // Section for local offline playlists stored in SharedPreferences.
                       if (_localPlaylists.isNotEmpty) ...[
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 8),
@@ -255,6 +287,7 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
                           ),
                         ),
                       ],
+                      // Section for remote cloud playlists linked to user's YouTube account.
                       if (_ytPlaylists.isNotEmpty) ...[
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 8),
@@ -276,7 +309,7 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
                               ),
                             ),
                             subtitle: Text(
-                              '${playlist.itemCount} songs • YouTube',
+                              playlist.itemCount > 0 ? '${playlist.itemCount} songs • YouTube' : 'YouTube',
                               style: const TextStyle(color: Colors.white38),
                             ),
                             onTap: () => _addToYoutube(playlist),

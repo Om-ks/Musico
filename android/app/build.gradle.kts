@@ -35,8 +35,8 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             // Keep release startup stable. Build with --split-per-abi for the
             // safe size win instead of aggressive shrinking.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

@@ -15,3 +15,5 @@
 -keep class io.flutter.plugins.pathprovider.** { *; }
 
 -keepattributes *Annotation*,InnerClasses,EnclosingMethod,Signature
+
+-dontwarn com.google.android.play.core.**

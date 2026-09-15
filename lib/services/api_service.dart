@@ -76,7 +76,8 @@ class ApiService {
   static const Duration _streamResolutionTimeout = Duration(seconds: 12);
 
   // Maximum time cached audio stream URLs remain valid before requiring fresh resolution.
-  static const Duration _streamCacheMaxAge = Duration(hours: 8);
+  // Reduced to 4 hours because YouTube's googlevideo streams expire strictly at the 6-hour mark.
+  static const Duration _streamCacheMaxAge = Duration(hours: 4);
 
   // YouTube Music API client used for searching tracks, playlists, and fetching suggestions.
   static final ytm.YTMusic _ytMusic = ytm.YTMusic();

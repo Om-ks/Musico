@@ -74,12 +74,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final account = context.read<AccountProvider>();
-      // If the user is logged into YouTube, fetch their personalized YouTube Music feed;
-      // otherwise, fetch general recommendations based on locally stored listening history.
-      final data = account.youtubeAuthorized 
-          ? await account.fetchHomeFeed(continuationToken: token)
-          : await ApiService.getRecommendedSections(await _storage.getListeningHistory());
-          
+      // Fetch YouTube Music home feed. Unauthenticated requests will return the generic YT Music guest feed.
+      final data = await account.fetchHomeFeed(continuationToken: token);
       // Discard this response if a newer fetch request was triggered while this was awaiting
       if (_fetchId != currentId) return;
       if (mounted) setState(() => _feedData = data);
@@ -506,24 +502,18 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           return GestureDetector(
-            // Tapping navigates to the playlist detail screen to view all songs in it
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => RemotePlaylistScreen(
-                  playlist: item is MusicPlaylist
-                      ? item
-                      : const MusicPlaylist(
-                          id: '',
-                          title: '',
-                          owner: '',
-                          thumbnailUrl: '',
-                          itemCount: 0,
-                          source: 'youtube',
-                        ),
-                ),
-              ),
-            ),
+            // Tapping a song plays it; tapping a playlist navigates to its detail screen.
+            onTap: () {
+              if (item is Song) {
+                final allSongs = items.whereType<Song>().toList();
+                context.read<PlayerProvider>().playSong(item, playlist: allSongs.isNotEmpty ? allSongs : [item]);
+              } else if (item is MusicPlaylist) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => RemotePlaylistScreen(playlist: item)),
+                );
+              }
+            },
             child: Container(
               width: 148,
               margin: const EdgeInsets.symmetric(horizontal: 6),

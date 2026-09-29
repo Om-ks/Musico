@@ -918,12 +918,15 @@ class ApiService {
     final tokens = q.split(' ').where((token) => token.length > 1).toList();
 
     var score = 0.0;
+    final combined1 = '$title $artist'.trim();
+    final combined2 = '$artist $title'.trim();
+
     // Exact full title match awards the highest point boost.
-    if (title == q) score += 120;
+    if (title == q || combined1 == q || combined2 == q) score += 150;
     // Title starting with query is a strong signal.
-    if (title.startsWith(q)) score += 70;
+    if (title.startsWith(q) || combined1.startsWith(q) || combined2.startsWith(q)) score += 80;
     // Title contains query.
-    if (title.contains(q)) score += 46;
+    if (title.contains(q) || combined1.contains(q) || combined2.contains(q)) score += 50;
     // Artist matches query.
     if (artist.contains(q)) score += 20;
     // Album matches query.
@@ -954,7 +957,9 @@ class ApiService {
 
     // Prefer official audio releases with proper album titles over generic videos.
     if (song.album != 'Music Video' && song.album != 'Online Video') {
-      score += 15;
+      score += 80;
+    } else {
+      score -= 40;
     }
     // Boost tracks with typical radio song lengths (between 1 and 12 minutes).
     if (song.duration > 60 && song.duration < 720) score += 5;
@@ -967,13 +972,20 @@ class ApiService {
   static List<_RecommendationSeed> _recommendationSeeds(List<Song> history) {
     // Fallback seeds for brand-new users with no listening history.
     if (history.isEmpty) {
-      return const [
-        _RecommendationSeed('Trending Global Hits', 'global top hits'),
-        _RecommendationSeed('Popular Music', 'trending music hits'),
-        _RecommendationSeed('Lofi & Chill', 'lofi chill beats'),
-        _RecommendationSeed('Bollywood Hits', 'bollywood top songs'),
-        _RecommendationSeed('Pop & Dance', 'pop dance hits'),
+      final fallbackSeeds = [
+        const _RecommendationSeed('Trending Global Hits', 'global top hits'),
+        const _RecommendationSeed('Popular Music', 'trending music hits'),
+        const _RecommendationSeed('Lofi & Chill', 'lofi chill beats'),
+        const _RecommendationSeed('Bollywood Hits', 'bollywood top songs'),
+        const _RecommendationSeed('Pop & Dance', 'pop dance hits'),
+        const _RecommendationSeed('Hip Hop Essentials', 'hip hop top hits'),
+        const _RecommendationSeed('Workout Mix', 'workout pump music'),
+        const _RecommendationSeed('Acoustic Relax', 'acoustic calm songs'),
+        const _RecommendationSeed('Viral TikTok Songs', 'viral trending songs'),
+        const _RecommendationSeed('R&B Grooves', 'r&b soul hits'),
       ];
+      fallbackSeeds.shuffle();
+      return fallbackSeeds.take(5).toList();
     }
 
     final uniqueHistory = _uniqueSongs(history).take(120).toList();

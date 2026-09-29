@@ -924,8 +924,7 @@ class AccountProvider extends ChangeNotifier {
   // Fetches personalized YouTube Music home feed sections and recommendation chips.
   // Supports continuous scroll pagination via continuationToken.
   Future<HomeFeedData> fetchHomeFeed({String? continuationToken}) async {
-    final headers = await getAuthHeaders();
-    if (headers == null) return const HomeFeedData(chips: [], sections: []);
+    final headers = await getAuthHeaders() ?? {};
     return await _youtubeAccountService.fetchHomeFeed(headers, params: continuationToken);
   }
 

@@ -11,6 +11,7 @@ import '../providers/player_provider.dart';
 import '../providers/account_provider.dart';
 import '../models/song.dart';
 import '../services/lyrics_service.dart';
+import '../services/translation_service.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/glass_container.dart';
 
@@ -77,6 +78,71 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // Records when the user manually scrolled the lyrics, pausing auto-scroll for a few seconds.
   DateTime _lastUserScrollAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // Translation states
+  bool _translating = false;
+  bool _translated = false;
+  bool _showTranslation = false;
+
+  Future<void> _translateLyrics() async {
+    if (_lyrics == null || _lyrics!.isEmpty) return;
+
+    if (_translated) {
+      setState(() => _showTranslation = !_showTranslation);
+      return;
+    }
+    
+    setState(() => _translating = true);
+
+    // Removed the isEnglish fast-path check because Google Translate's auto-detect
+    // frequently misclassifies songs (e.g. Russian/Japanese songs with English metadata 
+    // or short English intros) as fully English, blocking the translation.
+    // It's safer to just translate the whole thing—English lyrics translated to English
+    // will simply return the same English text.
+
+    final newLyrics = List<LyricsLine>.from(_lyrics!);
+    
+    // Process in concurrent batches of 10 to be lightning fast without losing 1:1 mapping
+    const int batchSize = 10;
+    for (int i = 0; i < newLyrics.length; i += batchSize) {
+      if (!mounted) return;
+      
+      final end = (i + batchSize < newLyrics.length) ? i + batchSize : newLyrics.length;
+      final batch = newLyrics.sublist(i, end);
+      
+      final results = await Future.wait(
+        batch.map((line) {
+          if (line.text.trim().isEmpty) return Future.value(null);
+          return TranslationService.translate(line.text);
+        })
+      );
+      
+      for (int j = 0; j < results.length; j++) {
+        final res = results[j];
+        if (res != null) {
+          newLyrics[i + j] = batch[j].copyWith(
+            translatedText: res.translation,
+            transliteration: res.transliteration
+          );
+        }
+      }
+      
+      // Update UI progressively as batches complete
+      if (mounted) {
+        setState(() {
+          _lyrics = newLyrics;
+        });
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _translating = false;
+        _translated = true;
+        _showTranslation = true;
+      });
+    }
+  }
 
   // Sets up the 10-second vinyl rotation animation controller and user scroll detection.
   @override
@@ -225,6 +291,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       _lyrics = null;
       _lyricsLoading = true;
       _lyricsLoadingFor = song.id;
+      _translated = false;
+      _showTranslation = false;
     });
     final lines = await LyricsService.getLyricsForSong(song);
     if (mounted) {
@@ -755,8 +823,24 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (timeSinceUserScroll >= const Duration(seconds: 3)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_lyricsScrollController.hasClients) {
+            // Calculate precise offset instead of assuming fixed height
+            double estimatedOffset = 0.0;
+            for (int i = 0; i < currentIdx; i++) {
+              final l = _lyrics![i];
+              double h = 48.0; // Base height (padding + original text)
+              if (l.text.length > 35) h += 24.0; // Rough wrap estimate
+              if (_showTranslation) {
+                if (l.transliteration != null && l.transliteration!.isNotEmpty) h += 26.0;
+                if (l.translatedText != null && l.translatedText!.isNotEmpty) {
+                  h += 28.0;
+                  if (l.translatedText!.length > 40) h += 24.0;
+                }
+              }
+              estimatedOffset += h;
+            }
+
             _lyricsScrollController.animateTo(
-              (currentIdx * 48.0) - 180.0, // Estimated item height - center offset
+              estimatedOffset - 180.0, // Center offset
               duration: const Duration(milliseconds: 400),
               curve: Curves.easeInOut,
             );
@@ -765,35 +849,91 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     }
 
-    // List of clickable lyric lines
-    return ListView.builder(
-      controller: _lyricsScrollController,
-      padding: const EdgeInsets.fromLTRB(24, 160, 24, 280),
-      itemCount: _lyrics!.length,
-      itemBuilder: (ctx, i) {
-        final isActive = i == currentIdx;
-        final line = _lyrics![i];
-        return InkWell(
-          borderRadius: BorderRadius.circular(8),
-          // Tapping any lyric line seeks the player directly to that exact line's timestamp!
-          onTap: () => provider.seek(line.timestamp),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-            child: Text(
-              line.text.isEmpty ? '-' : line.text,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                // Active sung line is bright white and bold; upcoming/past lines are muted
-                color: isActive ? Colors.white : Colors.white24,
-                fontSize: isActive ? 20 : 16,
-                fontWeight: isActive ? FontWeight.w900 : FontWeight.w500,
-                height: 1.4,
+    // List of clickable lyric lines wrapped in a Stack for the Translate button
+    return Stack(
+      children: [
+        ListView.builder(
+          controller: _lyricsScrollController,
+          padding: const EdgeInsets.fromLTRB(24, 160, 24, 280),
+          itemCount: _lyrics!.length,
+          itemBuilder: (ctx, i) {
+            final isActive = i == currentIdx;
+            final line = _lyrics![i];
+            
+            final hasTranslation = _showTranslation && line.translatedText != null && line.translatedText!.isNotEmpty;
+            final hasTranslit = _showTranslation && line.transliteration != null && line.transliteration!.isNotEmpty;
+            
+            return InkWell(
+              borderRadius: BorderRadius.circular(8),
+              // Only seek if the line has a valid timestamp (not a fallback plain lyric)
+              onTap: line.timestamp != Duration.zero ? () => provider.seek(line.timestamp) : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                child: Column(
+                  children: [
+                    Text(
+                      line.text.isEmpty ? '-' : line.text,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: isActive ? Colors.white : Colors.white24,
+                        fontSize: isActive ? 20 : 16,
+                        fontWeight: isActive ? FontWeight.w900 : FontWeight.w500,
+                        height: 1.4,
+                      ),
+                    ),
+                    if (hasTranslit)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          line.transliteration!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: isActive ? Colors.white70 : Colors.white38,
+                            fontSize: isActive ? 16 : 14,
+                            fontStyle: FontStyle.italic,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    if (hasTranslation)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          line.translatedText!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: isActive ? const Color(0xFFBB77FF) : const Color(0xFFBB77FF).withValues(alpha: 0.5),
+                            fontSize: isActive ? 18 : 15,
+                            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
+            );
+          },
+        ),
+        // Translate Button overlaid at top-right
+        Positioned(
+          top: 24,
+          right: 24,
+          child: Material(
+            color: _showTranslation ? const Color(0xFFBB77FF).withValues(alpha: 0.2) : Colors.white10,
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: IconButton(
+              onPressed: _translating ? null : _translateLyrics,
+              icon: _translating
+                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFBB77FF)))
+                  : Icon(Icons.translate, color: _showTranslation ? const Color(0xFFBB77FF) : Colors.white70),
+              tooltip: _showTranslation ? 'Hide Translation' : 'Translate Lyrics',
             ),
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 

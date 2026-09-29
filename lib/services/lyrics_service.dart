@@ -15,11 +15,29 @@ class LyricsLine {
   // The text of this lyrical line.
   final String text;
 
+  // Translated text of this lyrical line (optional).
+  final String? translatedText;
+
+  // Transliteration/pronunciation of this lyrical line (optional).
+  final String? transliteration;
+
   // Constructor requiring the timestamp and line text.
   const LyricsLine({
     required this.timestamp,
     required this.text,
+    this.translatedText,
+    this.transliteration,
   });
+  
+  // Create a copy of this line with translation added
+  LyricsLine copyWith({String? translatedText, String? transliteration}) {
+    return LyricsLine(
+      timestamp: timestamp,
+      text: text,
+      translatedText: translatedText ?? this.translatedText,
+      transliteration: transliteration ?? this.transliteration,
+    );
+  }
 }
 
 // Service that retrieves song lyrics from multiple sources (YouTube Music and LRCLIB).
@@ -55,10 +73,11 @@ class LyricsService {
       const searchUrl = kIsWeb
           ? 'https://corsproxy.io/?https://lrclib.net/api/search'
           : 'https://lrclib.net/api/search';
+      final cleanQueryArtist = artist.split(',').first.split('&').first.split(' x ').first.trim();
       final uri = Uri.parse(searchUrl).replace(
         queryParameters: {
           'track_name': _stripFeatureText(title),
-          'artist_name': artist,
+          'artist_name': cleanQueryArtist,
         },
       );
       final response = await http.get(uri).timeout(const Duration(seconds: 7));
@@ -70,8 +89,25 @@ class LyricsService {
       final maps = data.whereType<Map<String, dynamic>>().toList();
       if (maps.isEmpty) return null;
 
+      // Strictly filter results to prevent catching wrong/fake lyrics
+      final cleanTitle = _stripFeatureText(title).toLowerCase();
+      final cleanArtist = artist.toLowerCase().split(',').first.trim(); // use first artist for broader match
+
+      final validMaps = maps.where((item) {
+        final trackName = item['trackName']?.toString().toLowerCase() ?? '';
+        final artistName = item['artistName']?.toString().toLowerCase() ?? '';
+        
+        // Ensure at least one matches reasonably well
+        final trackMatch = trackName.contains(cleanTitle) || cleanTitle.contains(trackName);
+        final artistMatch = artistName.contains(cleanArtist) || cleanArtist.contains(artistName);
+        
+        return trackMatch && artistMatch; // Must match BOTH to be safe
+      }).toList();
+
+      if (validMaps.isEmpty) return null;
+
       // Prefer time-synchronized (LRC formatted) lyrics if available.
-      final withSynced = maps.firstWhere(
+      final withSynced = validMaps.firstWhere(
         (item) {
           final lyrics = item['syncedLyrics']?.toString().trim();
           return lyrics != null && lyrics.isNotEmpty;
@@ -84,7 +120,7 @@ class LyricsService {
       }
 
       // If no synced lyrics exist, fall back to plain text lyrics.
-      final plain = maps
+      final plain = validMaps
           .map((item) => item['plainLyrics']?.toString())
           .whereType<String>()
           .firstWhere((lyrics) => lyrics.trim().isNotEmpty, orElse: () => '');
@@ -181,18 +217,17 @@ class LyricsService {
         .toList();
   }
 
-  // Removes noisy video tags like "(Official Music Video)" or "[Official Audio]"
-  // from track titles so that lyrics search queries match clean song entries in LRCLIB.
   static String _stripFeatureText(String title) {
     return title
         .replaceAll(
-            RegExp(r'\s*\([^)]*(official|video|lyrics)[^)]*\)',
+            RegExp(r'\s*\([^)]*(official|video|lyrics|audio|feat|ft\.)[^)]*\)',
                 caseSensitive: false),
             '')
         .replaceAll(
-            RegExp(r'\s*\[[^\]]*(official|video|lyrics)[^\]]*\]',
+            RegExp(r'\s*\[[^\]]*(official|video|lyrics|audio|feat|ft\.)[^\]]*\]',
                 caseSensitive: false),
             '')
+        .replaceAll(RegExp(r'\s*[-|]\s*topic\b', caseSensitive: false), '')
         .trim();
   }
 

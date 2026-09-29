@@ -4,7 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/song.dart';
 import '../providers/player_provider.dart';
 import '../providers/account_provider.dart';
-import 'add_to_playlist_sheet.dart';
+import 'song_context_menu.dart';
 // A reusable list tile widget that displays a song row with its thumbnail, title, artist,
 // duration, favorite indicator, and optional removal button.
 class SongTile extends StatelessWidget {
@@ -61,7 +61,7 @@ class SongTile extends StatelessWidget {
         return ListTile(
           onTap: onTap,
           onLongPress:
-              onLongPress ?? () => showAddToPlaylistSheet(context, song),
+              onLongPress ?? () => showSongContextMenu(context, song),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           leading: _thumbnail(isCurrent, playback.isPlaying),
           title: Text(

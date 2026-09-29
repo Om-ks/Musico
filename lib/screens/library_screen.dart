@@ -96,7 +96,7 @@ class _LibraryScreenState extends State<LibraryScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_load(refreshYoutube: false));
+      unawaited(_load(refreshYoutube: false, showSpinner: false));
     }
   }
 

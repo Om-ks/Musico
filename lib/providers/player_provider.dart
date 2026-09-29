@@ -86,6 +86,7 @@ class PlayerProvider extends ChangeNotifier {
 
   // Current playback position in the song.
   Duration _position = Duration.zero;
+  Duration _lastValidPosition = Duration.zero;
 
   // Total duration of the currently playing song.
   Duration _duration = Duration.zero;
@@ -304,6 +305,9 @@ class PlayerProvider extends ChangeNotifier {
     _player.positionStream
         .throttleTime(const Duration(milliseconds: 500))
         .listen((position) {
+      if (position > const Duration(seconds: 0)) {
+        _lastValidPosition = position;
+      }
       _position = position;
       // Mark that genuine audio has begun playing once past 2 seconds.
       if (position > const Duration(seconds: 2)) {
@@ -318,6 +322,13 @@ class PlayerProvider extends ChangeNotifier {
     _player.durationStream.listen((duration) {
       if (duration != null && duration > Duration.zero) {
         _duration = duration;
+        
+        // If the song initially had 0 duration (e.g. from Home feed), update it.
+        if (_currentSong != null && _currentSong!.duration == 0) {
+          _currentSong = _currentSong!.copyWith(duration: duration.inSeconds);
+          unawaited(_recordRecentlyPlayed(_currentSong!));
+        }
+        
         notifyListeners();
       }
     });
@@ -578,10 +589,19 @@ class PlayerProvider extends ChangeNotifier {
         notifyListeners();
         return;
       }
-      _currentSong = playedSong;
-      _isLiked = await storage.isLiked(playedSong.id);
+      
+      // Update _currentSong with playedSong, but preserve any newly discovered duration
+      // in case the stream loaded and fired durationStream while we were waiting.
+      final discoveredDuration = _duration.inSeconds;
+      if (discoveredDuration > 0 && playedSong.duration == 0) {
+        _currentSong = playedSong.copyWith(duration: discoveredDuration);
+      } else {
+        _currentSong = playedSong;
+      }
+      
+      _isLiked = await storage.isLiked(_currentSong!.id);
       // Record song into listening history.
-      await _recordRecentlyPlayed(playedSong);
+      await _recordRecentlyPlayed(_currentSong!);
     } catch (e) {
       if (requestId != _playRequestId) return;
       _error = PlayerError.networkError;
@@ -607,7 +627,7 @@ class PlayerProvider extends ChangeNotifier {
     _lastPlaybackRecoveryAt = now;
     _recoveringPlaybackError = true;
     // Remember current playback position so song resumes seamlessly where it left off.
-    final savedPosition = _position;
+    final savedPosition = _lastValidPosition > _position ? _lastValidPosition : _position;
     try {
       final song = _currentSong;
       if (song == null) return;
@@ -995,6 +1015,16 @@ class PlayerProvider extends ChangeNotifier {
     // Release native Android audio effects (equalizer and bass boost session).
     if (defaultTargetPlatform == TargetPlatform.android) {
       unawaited(_effectsChannel.invokeMethod<void>('releaseAudioEffects'));
+    }
+  }
+
+  // Inserts a song into the queue to play immediately after the current song.
+  void insertNext(Song song) {
+    if (_queue.isEmpty) {
+      playSong(song);
+    } else {
+      _queue.insert(_queueIndex + 1, song);
+      notifyListeners();
     }
   }
 

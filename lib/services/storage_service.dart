@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -120,9 +121,17 @@ class StorageService {
     }
   }
 
+  Future<void>? _recentWriteLock;
+
   // Records that a song was played, moving it to the top of the recently played list
   // and incrementing its frequency in detailed listening history.
   Future<void> addRecentlyPlayed(Song song) async {
+    while (_recentWriteLock != null) {
+      await _recentWriteLock;
+    }
+    final completer = Completer<void>();
+    _recentWriteLock = completer.future;
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final songs = _decodeSongLists([
@@ -131,7 +140,15 @@ class StorageService {
       ]);
 
       // Remove existing occurrence so we can move this track to the top (most recent).
-      songs.removeWhere((item) => _songKey(item) == _songKey(song));
+      final existingIndex = songs.indexWhere((item) => _songKey(item) == _songKey(song));
+      if (existingIndex >= 0) {
+        final existing = songs[existingIndex];
+        // If the existing record has a valid duration but the new one is 0, preserve the valid duration.
+        if (existing.duration > 0 && song.duration == 0) {
+          song = song.copyWith(duration: existing.duration);
+        }
+        songs.removeAt(existingIndex);
+      }
       songs.insert(0, song);
       // Cap the recently played list to a maximum of 80 tracks to save memory.
       final capped = songs.length > 80 ? songs.sublist(0, 80) : songs;
@@ -145,6 +162,9 @@ class StorageService {
       await _saveListeningHistory(prefs, song);
     } catch (e) {
       debugPrint('Storage addRecentlyPlayed error: $e');
+    } finally {
+      _recentWriteLock = null;
+      completer.complete();
     }
   }
 

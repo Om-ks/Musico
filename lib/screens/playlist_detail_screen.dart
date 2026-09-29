@@ -3,7 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-
+import 'package:share_plus/share_plus.dart';
 import '../models/music_playlist.dart';
 import '../models/song.dart';
 import '../providers/player_provider.dart';
@@ -279,6 +279,16 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share),
+            tooltip: 'Share Playlist',
+            onPressed: () {
+              final url = 'https://music.youtube.com/playlist?list=${widget.playlist.id}';
+              Share.share('Check out this playlist: ${widget.playlist.title}\n$url');
+            },
+          ),
+        ],
       ),
       // Persistent mini music player pinned at the bottom above safe area
       bottomNavigationBar: const SafeArea(child: MiniPlayer()),

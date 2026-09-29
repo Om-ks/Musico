@@ -281,7 +281,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
     // 3. Show live autocomplete suggestions while user is focused and typing
     if (_focus.hasFocus && query.length >= 2) {
-      if (_suggestionsLoading && _liveSuggestions.isEmpty) {
+      final isDebouncing = _debounce?.isActive ?? false;
+      if ((_suggestionsLoading || isDebouncing) && _liveSuggestions.isEmpty) {
         return Center(
           child: SizedBox(
             width: 28,
@@ -293,7 +294,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         );
       }
-      if (_liveSuggestions.isNotEmpty) return _suggestionsView();
+      if (_liveSuggestions.isNotEmpty || isDebouncing || _suggestionsLoading) return _suggestionsView();
     }
 
     // 4. Show initial helpful prompt if user hasn't submitted a search yet

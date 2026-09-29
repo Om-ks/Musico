@@ -80,7 +80,12 @@ class LyricsService {
           'artist_name': cleanQueryArtist,
         },
       );
-      final response = await http.get(uri).timeout(const Duration(seconds: 7));
+      final response = await http.get(
+        uri,
+        headers: {
+          'User-Agent': 'Musico/1.0.0 (https://github.com/minex304-pixel/music1)'
+        },
+      ).timeout(const Duration(seconds: 7));
       if (response.statusCode != 200) return null;
 
       final data = jsonDecode(response.body);

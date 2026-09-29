@@ -457,10 +457,8 @@ class ApiService {
           () => _ytMusic.search(query),
         ).then((results) =>
             results.map(_songFromYtSearchResult).whereType<Song>().toList()),
-        _youtubeVideoSearch(query, limit: limit < 8 ? limit : 8),
+        _youtubeVideoSearch(query, limit: limit < 25 ? limit : 25),
       ]);
-
-      // Flatten batches, remove duplicate entries, filter empty IDs and non-music content.
       final songs = _uniqueSongs(batches.expand((batch) => batch))
           .where((song) => song.id.isNotEmpty)
           .where(_isLikelyMusic)

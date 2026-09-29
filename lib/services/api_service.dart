@@ -705,28 +705,15 @@ class ApiService {
         'https://vid.puffyan.us/latest_version?id=$videoId&itag=140',
       ];
     }
-    // ── 1. Try yt_flutter_musicapi (Unthrottled Python backend) ──────────────
     try {
       await _ensureYtInitialized();
       final response = await YtFlutterMusicapi().getAudioUrlFlexible(videoId: videoId);
+
       if (response.success && response.data != null && response.data!.audioUrl != null && response.data!.audioUrl!.isNotEmpty) {
-        debugPrint('yt_flutter_musicapi: resolved stream for $videoId');
         return [response.data!.audioUrl!];
       }
     } catch (e) {
-      debugPrint('yt_flutter_musicapi failed for $videoId: $e');
-    }
-
-    // ── 2. Try Piped API fallback ────────────────────────────────────────────
-    // Piped resolves stream URLs server-side (~300-800ms).
-    try {
-      final pipedUrls = await _getPipedStreamUrls(videoId);
-      if (pipedUrls.isNotEmpty) {
-        debugPrint('Piped: resolved ${pipedUrls.length} streams for $videoId');
-        return pipedUrls;
-      }
-    } catch (e) {
-      debugPrint('Piped failed for $videoId: $e');
+      debugPrint('YtFlutterMusicapi getAudioUrlFlexible failed: $e');
     }
 
     // ── 3. Fallback: youtube_explode_dart (Throttled but works) ──────────────
@@ -951,7 +938,12 @@ class ApiService {
         title.contains('remix') ||
         title.contains('sped up') ||
         title.contains('slowed');
-    if (titleIsVariant && !queryAsksVariant) score -= 12;
+    if (titleIsVariant && !queryAsksVariant) score -= 50;
+
+    // Massively boost official tracks
+    if (title.contains('official video') || title.contains('official audio') || title.contains('official lyric')) {
+      score += 200;
+    }
 
     // Prefer official audio releases with proper album titles over generic videos.
     if (song.album != 'Music Video' && song.album != 'Online Video') {

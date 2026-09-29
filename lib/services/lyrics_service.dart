@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dart_ytmusic_api/dart_ytmusic_api.dart' as ytm;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/song.dart';
 
@@ -49,18 +50,71 @@ class LyricsService {
   // Memoized Future to ensure YouTube Music client is initialized only once.
   static Future<void>? _ytInitFuture;
 
+  // In-memory cache for ultra-fast lookup during the same session.
+  static final Map<String, List<LyricsLine>> _memoryCache = {};
+
   // Orchestrator method that attempts to retrieve lyrics for a given song.
-  // If the song is from YouTube, it first tries YouTube Music's lyrics API.
-  // If unavailable or empty, it falls back to the open LRCLIB database.
   static Future<List<LyricsLine>> getLyricsForSong(Song song) async {
-    if (song.source == 'youtube') {
-      final youtubeLyrics = await _getYouTubeLyrics(song.id);
-      if (youtubeLyrics.isNotEmpty) return youtubeLyrics;
+    final cacheKey = '${song.source}_${song.id}';
+    
+    // 1. Check in-memory cache
+    if (_memoryCache.containsKey(cacheKey)) {
+      return _memoryCache[cacheKey]!;
     }
 
-    // Fallback: Query LRCLIB by track title and artist name.
-    final lrclibLyrics = await getLyrics(song.title, song.artist);
-    return lrclibLyrics ?? [];
+    // 2. Check disk cache (SharedPreferences)
+    final prefs = await SharedPreferences.getInstance();
+    final cachedData = prefs.getString('lyrics_$cacheKey');
+    if (cachedData != null) {
+      try {
+        final decoded = jsonDecode(cachedData) as List;
+        final cachedLyrics = decoded.map((item) {
+          final map = item as Map<String, dynamic>;
+          return LyricsLine(
+            timestamp: Duration(milliseconds: map['time'] as int),
+            text: map['text'] as String,
+            translatedText: map['trans'],
+            transliteration: map['pron'],
+          );
+        }).toList();
+        if (cachedLyrics.isNotEmpty) {
+          _memoryCache[cacheKey] = cachedLyrics;
+          return cachedLyrics;
+        }
+      } catch (e) {
+        debugPrint('Failed to parse cached lyrics: $e');
+      }
+    }
+
+    List<LyricsLine> result = [];
+
+    // 3. Fetch from YouTube Music
+    if (song.source == 'youtube') {
+      final youtubeLyrics = await _getYouTubeLyrics(song.id);
+      if (youtubeLyrics.isNotEmpty) result = youtubeLyrics;
+    }
+
+    // 4. Fallback to LRCLIB
+    if (result.isEmpty) {
+      final lrclibLyrics = await getLyrics(song.title, song.artist);
+      if (lrclibLyrics != null && lrclibLyrics.isNotEmpty) {
+        result = lrclibLyrics;
+      }
+    }
+
+    // 5. Save successful fetches to memory and disk cache
+    if (result.isNotEmpty) {
+      _memoryCache[cacheKey] = result;
+      final encoded = result.map((line) => {
+        'time': line.timestamp.inMilliseconds,
+        'text': line.text,
+        'trans': line.translatedText,
+        'pron': line.transliteration,
+      }).toList();
+      prefs.setString('lyrics_$cacheKey', jsonEncode(encoded));
+    }
+
+    return result;
   }
 
   // Searches the open-source LRCLIB API for synchronized or plain lyrics using track title and artist.
@@ -102,11 +156,30 @@ class LyricsService {
         final trackName = item['trackName']?.toString().toLowerCase() ?? '';
         final artistName = item['artistName']?.toString().toLowerCase() ?? '';
         
-        // Ensure at least one matches reasonably well
-        final trackMatch = trackName.contains(cleanTitle) || cleanTitle.contains(trackName);
-        final artistMatch = artistName.contains(cleanArtist) || cleanArtist.contains(artistName);
+        // Tokenize titles into words
+        final titleWords = cleanTitle.replaceAll(RegExp(r'[^a-z0-9\s]'), ' ').split(' ').where((w) => w.length > 2).toSet();
+        final trackWords = trackName.replaceAll(RegExp(r'[^a-z0-9\s]'), ' ').split(' ').where((w) => w.length > 2).toSet();
         
-        return trackMatch && artistMatch; // Must match BOTH to be safe
+        // Check if at least 1 significant word matches in the title
+        final trackMatch = titleWords.intersection(trackWords).isNotEmpty || trackName.contains(cleanTitle) || cleanTitle.contains(trackName);
+        
+        // Fuzzy artist match
+        bool artistMatch = artistName.contains(cleanArtist) || cleanArtist.contains(artistName);
+        if (!artistMatch) {
+          final lrcWords = artistName.split(' ').where((w) => w.length > 2);
+          for (final word in lrcWords) {
+            if (cleanArtist.contains(word)) {
+              artistMatch = true;
+              break;
+            }
+          }
+          // If artist is completely missing from YouTube channel name, but title is a strong match, allow it.
+          if (!artistMatch && titleWords.intersection(trackWords).length >= 2) {
+            artistMatch = true;
+          }
+        }
+        
+        return trackMatch && artistMatch;
       }).toList();
 
       if (validMaps.isEmpty) return null;

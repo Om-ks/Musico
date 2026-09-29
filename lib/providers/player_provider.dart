@@ -566,6 +566,7 @@ class PlayerProvider extends ChangeNotifier {
     _error = PlayerError.none;
     _isLoading = true;
     _position = Duration.zero;
+    _lastValidPosition = Duration.zero;
     _duration =
         song.duration > 0 ? Duration(seconds: song.duration) : Duration.zero;
     _adoptPlaylist(song, playlist);
